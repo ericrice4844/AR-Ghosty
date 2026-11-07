@@ -153,6 +153,92 @@ class AudioEngine {
   // ---- ghost sounds ---------------------------------------------------------
   // Each returns the duration in seconds.
 
+  // ---- recorded crying (see assets/sounds/CREDITS.md) ------------------------------
+  async loadSamples() {
+    if (this._samplesLoading) return this._samplesLoading;
+    this.init();
+    this.samples = {};
+    this._samplesLoading = Promise.all(['sob_gasps', 'sob_wail', 'sob_chorus'].map(async (n) => {
+      try {
+        const res = await fetch(new URL(`../assets/sounds/${n}.mp3`, import.meta.url));
+        const buf = await this.ctx.decodeAudioData(await res.arrayBuffer());
+        this.samples[n] = buf;
+        this.samples[`${n}_rev`] = this._reverse(buf);
+      } catch (e) {
+        console.warn('[audio] could not load', n, e);
+      }
+    })).then(() => this.samples);
+    return this._samplesLoading;
+  }
+
+  _reverse(buf) {
+    const b = this.ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const src = buf.getChannelData(c), dst = b.getChannelData(c);
+      for (let i = 0, n = src.length; i < n; i++) dst[i] = src[n - 1 - i];
+    }
+    return b;
+  }
+
+  // Play part of a recording with soft edges, optionally filtered and sent to the reverb.
+  _slice(dest, buf, { at, offset = 0, dur, rate = 1, gain = 1, lp = null, send = 0 }) {
+    const ctx = this.ctx;
+    dur = Math.min(dur ?? buf.duration, buf.duration - offset);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    const real = dur / rate;
+    const fade = Math.min(0.25, real * 0.2);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(gain, at + fade);
+    g.gain.setValueAtTime(gain, at + real - fade);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + real);
+    let node = src;
+    if (lp) { const f = this._filt('lowpass', lp, 0.7); node.connect(f); node = f; }
+    node.connect(g);
+    g.connect(dest);
+    if (send) { const sg = ctx.createGain(); sg.gain.value = send; g.connect(sg).connect(this.reverbIn); }
+    src.start(at, offset, dur);
+    return at + real;
+  }
+
+  _randSlice(buf, min, max) {
+    const dur = Math.min(buf.duration, rand.range(min, max));
+    return { offset: rand.range(0, Math.max(0, buf.duration - dur)), dur };
+  }
+
+  // Several real recordings at once: a close sob, a slowed ghostly double
+  // just behind it, a distant moaning chorus, and sometimes a breath sucked
+  // in backwards before it starts. Never the same twice.
+  sobLayered(dest, intensity = 1) {
+    const S = this.samples;
+    if (!S || !S.sob_wail || !S.sob_gasps) return this.sob(dest, intensity);
+    const t0 = this.ctx.currentTime + 0.05;
+    let end = t0;
+    let t = t0;
+    if (rand() < 0.4) {
+      const r = S.sob_gasps_rev;
+      const d = rand.range(0.8, 1.5);
+      t = this._slice(dest, r, { at: t0, offset: r.duration - d - 0.1, dur: d, rate: 0.85, gain: 0.35 * intensity, send: 0.8 }) - 0.15;
+    }
+    // the sob itself
+    const mainBuf = rand() < 0.45 ? S.sob_gasps : S.sob_wail;
+    const m = mainBuf === S.sob_gasps ? { offset: 0, dur: mainBuf.duration } : this._randSlice(mainBuf, 3.5, 7);
+    end = Math.max(end, this._slice(dest, mainBuf, { at: t, ...m, rate: rand.range(0.9, 1.02), gain: 0.9 * intensity }));
+    // the same grief, slower and lower, a beat behind: the thing wearing her voice
+    const otherBuf = mainBuf === S.sob_gasps ? S.sob_wail : S.sob_gasps;
+    const o = this._randSlice(otherBuf, 2.5, 6);
+    end = Math.max(end, this._slice(dest, otherBuf, { at: t + rand.range(0.25, 0.6), ...o, rate: rand.range(0.72, 0.84), gain: 0.42 * intensity, lp: 1700, send: 1.2 }));
+    // many voices, far off, sometimes backwards
+    if (S.sob_chorus && rand() < 0.75) {
+      const cb = rand() < 0.4 ? S.sob_chorus_rev : S.sob_chorus;
+      const c = this._randSlice(cb, 4, 8);
+      end = Math.max(end, this._slice(dest, cb, { at: t + rand.range(-0.3, 0.8), ...c, rate: rand.range(0.82, 0.95), gain: 0.32 * intensity, lp: 2200, send: 1.5 }));
+    }
+    return end - this.ctx.currentTime;
+  }
+
   sob(dest, intensity = 1) {
     const ctx = this.ctx;
     let t = ctx.currentTime + 0.05;

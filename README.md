@@ -84,8 +84,9 @@ js/surfaces.js             finds doors, windows and framed glass in the camera i
 js/world.js                deterministic GPS haunts, view/projection math
 js/storage.js              photos in IndexedDB, settings and journal in localStorage
 sw.js                      offline cache
-assets/ghosts/             photographic ghost sprites (+ CREDITS.md)
+assets/ghosts/             photographic ghost sprites (+ CREDITS.md for images and sounds)
+assets/sounds/             recorded crying used for the Weeping Widow
 tools/make_sprites.py      rebuilds the sprites from the source photos
 ```
 
-The ghosts' faces (and the Weeping Widow's body) are photographic sprites made from openly licensed photos of death masks, porcelain dolls and statues: cut out, regraded and altered by `tools/make_sprites.py`. Credits and licences are in [`assets/ghosts/CREDITS.md`](assets/ghosts/CREDITS.md). Their bodies, hair, hands, lighting and smoke are rendered procedurally, and the Crawler and the Grinning Man are fully procedural. Every sound is synthesized live. Photos you take stay on your device.
+The ghosts' faces (and the Weeping Widow's body) are photographic sprites made from openly licensed photos of death masks, porcelain dolls and statues: cut out, regraded and altered by `tools/make_sprites.py`. Credits and licences are in [`assets/ghosts/CREDITS.md`](assets/ghosts/CREDITS.md). Their bodies, hair, hands, lighting and smoke are rendered procedurally, and the Crawler and the Grinning Man are fully procedural. The Weeping Widow's crying layers several royalty-free recordings (slowed, reversed and filtered differently every time, see `tools/make_sounds.sh`); every other sound is synthesized live. Photos you take stay on your device.

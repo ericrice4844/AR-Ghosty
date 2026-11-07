@@ -11,3 +11,15 @@ The photographic ghost sprites in this folder are heavily modified versions of t
 | `stone_drowned.webp` | The Drowned | [Statue Face](https://stocksnap.io/photo/statue-face-WZOWQKOK0D) | Alexandr Baranets | [CC0 (public domain dedication)](https://creativecommons.org/publicdomain/zero/1.0/) | `stone.jpg` |
 
 No photographs of identifiable living people are used.
+
+# Sound credits
+
+The Weeping Widow's crying is built from these recordings, layered, slowed, reversed and re-filtered in the game (`js/audio.js`, `sobLayered`). The files in `assets/sounds/` are trimmed, cleaned and loudness-normalised versions made by `tools/make_sounds.sh`.
+
+| File | Source | Licence |
+|---|---|---|
+| `sob_gasps.mp3` | "Creature sobbing in fear" (Mixkit item 464) | [Mixkit Sound Effects Free License](https://mixkit.co/license/#sfxFree) |
+| `sob_wail.mp3` | "Creature sad crying" (Mixkit item 465) | [Mixkit Sound Effects Free License](https://mixkit.co/license/#sfxFree) |
+| `sob_chorus.mp3` | "People moaning sadly" (Mixkit item 469) | [Mixkit Sound Effects Free License](https://mixkit.co/license/#sfxFree) |
+
+All three are listed at https://mixkit.co/free-sound-effects/sad/.

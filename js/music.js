@@ -48,6 +48,7 @@ class MenuMusic {
 
   start() {
     if (this.playing || !audio.running) return;
+    audio.loadSamples();
     const ctx = audio.ctx;
     this.playing = true;
 
@@ -490,7 +491,7 @@ class MenuMusic {
       audio.placeVoice(v, ang, rand.range(-10, 20), rand.range(4, 9));
       v.input.gain.value = 0.35;
       const what = rand.pick(['whisper', 'sob', 'giggle', 'hum', 'drip', 'groan']);
-      const dur = what === 'sob' ? audio.sob(v.input, 0.5)
+      const dur = what === 'sob' ? audio.sobLayered(v.input, 0.45)
         : what === 'giggle' ? audio.giggle(v.input)
         : what === 'hum' ? audio.hum(v.input)
         : what === 'drip' ? audio.drip(v.input)

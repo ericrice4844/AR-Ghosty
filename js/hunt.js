@@ -84,6 +84,7 @@ export class Hunt {
     }
     await audio.unlock();
     audio.setEnabled(settings.sound);
+    audio.loadSamples();
     audio.startAmbience();
     await startMic();
     startSteps();
@@ -652,7 +653,7 @@ export class Hunt {
     const dest = g.voice.input;
     let dur = 1.5;
     switch (s) {
-      case 'sob': dur = audio.sob(dest, 0.8 + g.agit / 200); break;
+      case 'sob': dur = audio.sobLayered(dest, 0.8 + g.agit / 200); break;
       case 'hum': dur = audio.hum(dest); break;
       case 'giggle': dur = audio.giggle(dest, g.type === 'grinner'); break;
       case 'whisper': dur = audio.whisper(dest); break;
