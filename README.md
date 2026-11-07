@@ -76,9 +76,12 @@ js/audio.js                Web Audio synthesis (sobbing, humming, whispers, skit
 js/sensors.js              camera, torch, light meter, device orientation/compass, GPS, headphone hints
 js/voice.js                microphone level, speech recognition, voice recording (for the Mimic), ghost speech
 js/detect.js               object detection for emerging ghosts, with a shadow fallback
+js/anchor.js               where a ghost stands relative to detected furniture and people
 js/world.js                deterministic GPS haunts, view/projection math
 js/storage.js              photos in IndexedDB, settings and journal in localStorage
 sw.js                      offline cache
+assets/ghosts/             photographic ghost sprites (+ CREDITS.md)
+tools/make_sprites.py      rebuilds the sprites from the source photos
 ```
 
-No images or audio files are used. Every ghost is drawn procedurally and every sound is synthesized live. Photos stay on your device.
+The ghosts' faces (and the Weeping Widow's body) are photographic sprites made from openly licensed photos of death masks, porcelain dolls and statues: cut out, regraded and altered by `tools/make_sprites.py`. Credits and licences are in [`assets/ghosts/CREDITS.md`](assets/ghosts/CREDITS.md). Their bodies, hair, hands, lighting and smoke are rendered procedurally, and the Crawler and the Grinning Man are fully procedural. Every sound is synthesized live. Photos you take stay on your device.

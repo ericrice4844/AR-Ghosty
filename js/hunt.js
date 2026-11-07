@@ -620,7 +620,9 @@ export class Hunt {
     let best = null, bestScore = 0;
     for (const g of this.ghosts) {
       if (g.resolved || g.blocked || g.state === 'dormant') continue;
-      const score = g.vis * 2 + clamp(1 - g.angle / 70, 0, 1) + (g.def.behavior === 'peripheral' && g.angle < 40 ? 0.8 : 0) + (g.speaking > -6 && g.encountered ? 0.3 : 0);
+      // you talk to what you're facing; something behind you only answers if nothing else does
+      const facing = clamp(1 - g.angle / 70, 0, 1);
+      const score = g.vis * (0.3 + 1.7 * facing) + facing + (g.def.behavior === 'peripheral' && g.angle < 40 ? 0.8 : 0) + (g.def.behavior === 'faced' && g.angle < 25 ? 0.8 : 0);
       if (score > bestScore) { best = g; bestScore = score; }
     }
     return bestScore > 0.45 ? best : null;
@@ -951,7 +953,7 @@ export class Hunt {
       else { ctx.fillStyle = `rgba(120,0,0,${0.5 * (1 - k)})`; ctx.fillRect(0, 0, w, h); }
     }
 
-    if (DEBUG) {
+    if (DEBUG && !new URLSearchParams(location.search).has('nodebugtext')) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = '#0f0';
       ctx.font = '11px monospace';

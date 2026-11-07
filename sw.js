@@ -1,7 +1,7 @@
 // Offline cache for the app shell. CDN models (object detection) are cached on use.
-const CACHE = 'ghosty-v3';
+const CACHE = 'ghosty-v4';
 const SHELL = [
-  './', 'index.html', 'styles.css', 'manifest.webmanifest', 'assets/icon.svg',
+  './', 'index.html', 'styles.css', 'manifest.webmanifest', 'assets/icon.svg', 'assets/ghosts/mask.webp', 'assets/ghosts/doll_wren.webp', 'assets/ghosts/doll_mimic.webp', 'assets/ghosts/weeper.webp', 'assets/ghosts/stone_drowned.webp',
   'js/main.js', 'js/hunt.js', 'js/ghosts.js', 'js/render.js', 'js/audio.js', 'js/sensors.js',
   'js/voice.js', 'js/music.js', 'js/anchor.js', 'js/detect.js', 'js/storage.js', 'js/world.js', 'js/util.js',
 ];

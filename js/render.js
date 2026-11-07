@@ -9,6 +9,30 @@
 import { clamp } from './util.js';
 
 const TAU = Math.PI * 2;
+
+// Photographic sprites (see assets/ghosts/CREDITS.md). Until they load, or if
+// they fail to, the procedural versions are drawn instead.
+const SPR = {};
+for (const name of ['mask', 'doll_wren', 'doll_mimic', 'weeper', 'stone_drowned']) {
+  const im = new Image();
+  im.src = new URL(`../assets/ghosts/${name}.webp`, import.meta.url).href;
+  SPR[name] = im;
+}
+const ok = (name) => SPR[name].complete && SPR[name].naturalWidth > 0;
+
+// The death mask in head space (head spans y -1..1). Its eye holes sit at about
+// (±0.29, 0.0) and its broken jaw at (0.05, 0.6).
+function maskFace(c, alpha, mouthOpen = 0, glow = null) {
+  c.save();
+  c.globalAlpha *= alpha;
+  c.drawImage(SPR.mask, -0.745, -1.05, 1.49, 2.1);
+  if (mouthOpen > 0.02) blob(c, 0.04, 0.6 + mouthOpen * 0.15, 0.16 + mouthOpen * 0.06, 0.06 + mouthOpen * 0.32, '0,0,0', 0.97);
+  if (glow) {
+    c.globalCompositeOperation = 'lighter';
+    for (const x of [-0.28, 0.3]) { blob(c, x, 0, 0.16, 0.16, glow, 0.5); blob(c, x, 0, 0.045, 0.045, '255,255,255', 0.9); }
+  }
+  c.restore();
+}
 function hash1(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 function noise1(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash1(i) * (1 - u) + hash1(i + 1) * u; }
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -453,7 +477,9 @@ export const DRAW = {
     c.save();
     c.translate(0, bob - 0.12);
     c.scale(0.07, 0.07);
-    face(c, { skin: [190, 215, 228], gaunt: 0.7, eyes: 'hollow', eyeSize: 1.1, mouth: 0.25 + agit * 0.6, alpha: 0.18 + agit * 0.45 + Math.max(0, Math.sin(t * 0.6)) * 0.22, tex: 0.4, noNose: true });
+    const la = 0.18 + agit * 0.45 + Math.max(0, Math.sin(t * 0.6)) * 0.22;
+    if (ok('mask')) maskFace(c, la * 0.8, 0.3 + agit * 0.5);
+    else face(c, { skin: [190, 215, 228], gaunt: 0.7, eyes: 'hollow', eyeSize: 1.1, mouth: 0.25 + agit * 0.6, alpha: la, tex: 0.4, noNose: true });
     c.restore();
   },
 
@@ -501,7 +527,14 @@ export const DRAW = {
     c.rotate(tilt);
     c.scale(0.072, 0.072);
     const fierce = agit > 0.55 || p.scare;
-    face(c, { skin: sk, gaunt: 0.35, eyes: fierce ? 'black' : 'human', bloodshot: 0.8, eyeSize: fierce ? 1.15 : 1, mouth: p.scare ? 1 : fierce ? (agit - 0.5) * 1.8 : 0, jawDrop: 1.3, veins: 0.5, tex: 0.9 });
+    if (ok('doll_wren')) {
+      // a porcelain face with nothing behind the eyes
+      c.drawImage(SPR.doll_wren, -1.05, -1.12, 2.1, 1.98);
+      const mo = p.scare ? 1 : fierce ? (agit - 0.5) * 1.8 : 0;
+      if (mo > 0.02) blob(c, 0, 0.5 + mo * 0.2, 0.18 + mo * 0.05, 0.05 + mo * 0.35, '0,0,0', 0.97);
+    } else {
+      face(c, { skin: sk, gaunt: 0.35, eyes: fierce ? 'black' : 'human', bloodshot: 0.8, eyeSize: fierce ? 1.15 : 1, mouth: p.scare ? 1 : fierce ? (agit - 0.5) * 1.8 : 0, jawDrop: 1.3, veins: 0.5, tex: 0.9 });
+    }
     const part = p.scare ? 0.75 : agit > 0.3 ? 0.2 + agit * 0.4 : 0;
     hairCurtain(c, { x0: -0.95, x1: 0.95, top: -1.05, bottom: 3.3, n: 90, w: 0.045, t, seed: 3, sway: sway * 30, gap: part ? [-part, part] : [0.14, 0.5], flare: 1.25 });
     c.restore();
@@ -509,6 +542,28 @@ export const DRAW = {
 
   weeper(c, p) {
     const { t, agit } = p;
+    if (ok('weeper') && ok('mask') && !p.forceProcedural) {
+      // a woman of grey stone, folded over with her head in her hand, shaking
+      const sob = (Math.sin(t * 18) * 0.5 + 0.5) * Math.max(0, Math.sin(t * 1.7));
+      if (agit > 0.3 || p.scare) blob(c, -0.1, -0.05, 0.6, 0.6, '150,10,10', (p.scare ? 1 : agit) * 0.4);
+      if (!p.scare) {
+        blob(c, 0, 0.47, 0.4, 0.05, '0,0,0', 0.7);
+        c.save();
+        c.translate(Math.sin(t * 23) * 0.003 * (1 + agit * 4), sob * 0.006 * (1 - agit));
+        c.drawImage(SPR.weeper, -0.41, -0.5, 0.82, 1);
+        c.restore();
+      }
+      // when she's had enough, the face she hides lifts out of the stone
+      const lift = p.scare ? 1 : sstep(0.55, 0.95, agit);
+      if (lift > 0.02) {
+        c.save();
+        c.translate(-0.22 + lift * 0.18, -0.3 - lift * 0.05);
+        c.scale(0.11, 0.12);
+        maskFace(c, lift, lift, '255,40,25');
+        c.restore();
+      }
+      return;
+    }
     const lift = p.scare ? 1 : sstep(0.4, 0.92, agit);
     const sob = (Math.sin(t * 18) * 0.5 + 0.5) * Math.max(0, Math.sin(t * 1.7)) * (1 - lift);
     const sk = [168, 168, 166];
@@ -584,7 +639,17 @@ export const DRAW = {
     const fa = p.scare ? 1 : 0.12 + agit * 0.8;
     c.fillStyle = rgb(col);
     ellipse(c, 0, 0, 0.8, 1.05); c.fill();
-    face(c, { skin: [150, 146, 158], gaunt: 1, eyes: 'black', eyeSize: 1.2, grin: agit > 0.25 || p.scare, mouth: 0.1 + agit * 0.3, tex: 1, veins: 0.6, alpha: fa, noNose: true });
+    if (ok('mask')) {
+      c.save();
+      c.scale(0.95, 0.85);
+      maskFace(c, fa, p.scare ? 1 : agit * 0.6);
+      c.globalCompositeOperation = 'source-atop';
+      c.fillStyle = 'rgba(25,18,40,0.45)';
+      c.fillRect(-0.8, -1.1, 1.6, 2.2);
+      c.restore();
+    } else {
+      face(c, { skin: [150, 146, 158], gaunt: 1, eyes: 'black', eyeSize: 1.2, grin: agit > 0.25 || p.scare, mouth: 0.1 + agit * 0.3, tex: 1, veins: 0.6, alpha: fa, noNose: true });
+    }
     c.restore();
     c.save();
     c.translate(0, -0.445);
@@ -618,7 +683,8 @@ export const DRAW = {
     c.translate(0, -0.33);
     c.scale(0.072, 0.075);
     const mo = p.scare ? 1 : p.speaking ? 0.2 + Math.abs(Math.sin(t * 9)) * 0.4 : 0.15 + agit * 0.4;
-    face(c, { skin: [200, 210, 202], gaunt: 0.8, eyes: p.scare ? 'black' : 'hollow', mouth: mo, jawDrop: 1.4, tex: 0.3, alpha: 0.95, noNose: true });
+    if (ok('mask')) maskFace(c, 0.95, mo);
+    else face(c, { skin: [200, 210, 202], gaunt: 0.8, eyes: p.scare ? 'black' : 'hollow', mouth: mo, jawDrop: 1.4, tex: 0.3, alpha: 0.95, noNose: true });
     c.restore();
     for (const sx of [-1, 1]) hand(c, sx * 0.12, -0.08 + Math.sin(t * 0.9 + sx) * 0.01, -Math.PI / 2 + sx * 0.25, 0.08, { skin: [205, 215, 207], w: 0.009, curl: sx * 0.08, a: 0.55 });
     // the fabric over the top of them
@@ -656,9 +722,17 @@ export const DRAW = {
     c.translate(0, -0.3);
     c.scale(0.1, 0.11);
     const mo = p.scare ? 1 : 0.5 + agit * 0.4 + (p.speaking ? Math.abs(Math.sin(t * 7)) * 0.1 : 0);
-    face(c, { skin: sk, gaunt: 0, bloat: 0.6, eyes: 'milky', eyeSize: 1.25, mouth: mo, veins: 1.2, tex: 1, wet: 1, lookX: 0 });
+    let my;
+    if (ok('stone_drowned')) {
+      // grey-green and swollen, cataract eyes, the mouth still open for air
+      c.drawImage(SPR.stone_drowned, -0.833, -1.0, 1.67, 2.07);
+      my = 0.33 + mo * 0.08;
+      blob(c, -0.03, my, 0.2 + mo * 0.05, 0.09 + mo * 0.25, '0,6,4', 0.95);
+    } else {
+      face(c, { skin: sk, gaunt: 0, bloat: 0.6, eyes: 'milky', eyeSize: 1.25, mouth: mo, veins: 1.2, tex: 1, wet: 1, lookX: 0 });
+      my = 0.52 + mo * 0.3;
+    }
     // black water spilling out of him
-    const my = 0.52 + mo * 0.3;
     c.strokeStyle = 'rgba(14,22,18,0.85)';
     c.lineCap = 'round';
     for (let i = 0; i < 5; i++) {
@@ -748,6 +822,13 @@ export const DRAW = {
     limb(c, [[0.16, -0.24], [0.2, 0.0], [0.21, 0.26]], 0.03, 0.022, sk, def);
     hand(c, -0.21, 0.26, Math.PI / 2 + 0.05, 0.08, { skin: sk, w: 0.009, curl: 0.15, a: def });
     hand(c, 0.21, 0.26, Math.PI / 2 - 0.05, 0.08, { skin: sk, w: 0.009, curl: -0.15, a: def });
+    if (ok('doll_mimic')) {
+      // a porcelain face, lit from one side; the mouth opens far too wide
+      c.drawImage(SPR.doll_mimic, -0.115, -0.5, 0.23, 0.4);
+      const open = p.scare ? 1 : p.speaking ? 0.3 + Math.abs(Math.sin(t * 13)) * 0.7 : 0;
+      if (open > 0.02) blob(c, -0.07, -0.308 + open * 0.026, 0.019 + open * 0.006, 0.009 + open * 0.045, '0,0,0', 0.98);
+      return;
+    }
     // a cracked porcelain face, and a mouth that opens far too wide
     c.save();
     c.translate(0, -0.38);
@@ -815,7 +896,7 @@ export const DRAW = {
 // Where each face is, for the jumpscare: [x, y, face height] in unit space.
 export const FACE = {
   lantern: [0, -0.12, 0.17], wren: [0.01, -0.335, 0.17], weeper: [0, -0.31, 0.19], hollow: [0, -0.445, 0.13],
-  whisperer: [0, -0.33, 0.17], drowned: [0, -0.27, 0.25], crawler: [0, 0.27, 0.2], mimic: [0, -0.35, 0.21], grinner: [0, -0.37, 0.19],
+  whisperer: [0, -0.33, 0.17], drowned: [0, -0.27, 0.25], crawler: [0, 0.27, 0.2], mimic: [-0.03, -0.36, 0.22], grinner: [0, -0.37, 0.19],
 };
 
 // How each one is lit and where its body dissolves into smoke (unit y).
