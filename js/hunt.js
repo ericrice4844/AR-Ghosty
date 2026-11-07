@@ -9,6 +9,7 @@ import { drawGhost, drawEdgeHands, drawScare, drawFX } from './render.js';
 import { findObjects, loadDetector, detectorState } from './detect.js';
 import { placeGhost, ANCHOR, PLACE_TEXT } from './anchor.js';
 import { findSurfaces } from './surfaces.js';
+import { loadDepth, depthState, depthGrid, roomFromDepth, freeAt } from './depth.js';
 import { photos, settings, saveSettings, progress, saveProgress } from './storage.js';
 
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -91,7 +92,7 @@ export class Hunt {
     this.stepsSeen = steps.count;
     if (!this.headphones) this.headphones = await detectHeadphones();
     this.spawn();
-    if (!this.noCamera) loadDetector(); // ghosts need to know where the furniture is
+    if (!this.noCamera) { loadDetector(); loadDepth(); } // ghosts need to know where the furniture and walls are
 
     this.last = performance.now();
     this.raf = requestAnimationFrame((t) => this.frame(t));
@@ -263,6 +264,7 @@ export class Hunt {
     if (steps.count !== this.stepsSeen) { this.walk(steps.count - this.stepsSeen); this.stepsSeen = steps.count; }
     this.listenForNoise(level, dt);
     this.updateSurfaces(dt);
+    this.updateRoom();
 
     let emf = 0, dread = 0, threatNear = 0;
     for (const g of this.ghosts) {
@@ -359,7 +361,7 @@ export class Hunt {
         // Lingers just out of sight, drifts slowly, shows itself when you hold still on it.
         if (g.state === 'lurking') {
           g.az = norm360(g.az + g.wander * 0.8 * dt);
-          if (g.facing > 1.2 && this.anchorReady(g)) this.manifest(g);
+          if (g.facing > 1.2 && this.anchorReady(g) && this.roomOK(g)) this.manifest(g);
           else if (onScreen && g.angle < 40 && Math.random() < 0.002) target = 0.25; // a glimpse
         }
         if (g.state === 'manifest') {
@@ -382,14 +384,14 @@ export class Hunt {
       case 'faced': {
         // Only visible when you're looking straight at it. Circles you otherwise.
         if (g.angle > 12) g.az = norm360(g.az + (g.wander > 0 ? 9 : -9) * dt);
-        target = g.angle < 11 ? 1 - g.angle / 14 : 0;
+        target = g.angle < 11 && this.roomOK(g) ? 1 - g.angle / 14 : 0;
         if (target > 0.6 && g.state !== 'manifest') this.manifest(g, true);
         if (target < 0.05 && g.state === 'manifest') g.state = 'lurking';
         break;
       }
       case 'peripheral': {
         // Only in the corner of your eye — usually from behind something.
-        if (onScreen && g.angle < 40 && !this.anchorReady(g)) break;
+        if (onScreen && g.angle < 40 && !(this.anchorReady(g) && this.roomOK(g))) break;
         if (g.proj && onScreen) {
           const dx = (g.proj.x - this.w / 2) / (this.w / 2), dy = (g.proj.y - this.h / 2) / (this.h / 2);
           const r = Math.max(Math.abs(dx), Math.abs(dy));
@@ -403,7 +405,7 @@ export class Hunt {
         break;
       }
       case 'weeper': {
-        if (g.state === 'lurking' && g.angle < 45 && this.anchorReady(g)) this.manifest(g);
+        if (g.state === 'lurking' && g.angle < 45 && this.anchorReady(g) && this.roomOK(g)) this.manifest(g);
         if (g.state === 'manifest') {
           target = 1;
           if (cond.torch && g.angle < 22) { g.agit += 28 * dt; if (!g.mem.warned) { g.mem.warned = true; this.toast('The sobbing catches. She doesn\'t like the light.'); } }
@@ -575,9 +577,13 @@ export class Hunt {
   applyPlacement(g, pl, M) {
     const { w, h, focal } = this;
     if (!pl || pl.kind === 'dark') {
-      const x = pl ? pl.x : g.proj ? clamp(g.proj.x, w * 0.2, w * 0.8) : w / 2;
+      let x = pl ? pl.x : g.proj ? clamp(g.proj.x, w * 0.2, w * 0.8) : w / 2;
+      let dist = clamp(g.dist, 2, 3.6);
+      // stand on open floor, in front of whatever is there, not inside it
+      const spot = this.openFloorNear(x);
+      if (spot) { x = spot.x; dist = spot.dist; }
       g.az = azElFromDir(unproject(M, x, h / 2, w, h, focal)).az;
-      g.dist = clamp(g.dist, 2, 3.6);
+      g.dist = dist;
       g.el = this.elFor(g);
       this.toWorld(g);
       g.anchor = { kind: 'floor', exclude: [] };
@@ -623,6 +629,82 @@ export class Hunt {
     if (!p) return null;
     const bw = aw * this.focal, bh = ah * this.focal;
     return { x: p.x - bw / 2, y: p.y - bh / 2, w: bw, h: bh };
+  }
+
+  // ---- how much room is there? ---------------------------------------------------------
+  // A depth reading of what the camera sees, refreshed while ghosts are near.
+  updateRoom() {
+    if (this.noCamera || !this.video || depthState() !== 'ready' || this.roomBusy) return;
+    const wanted = this.ghosts.some((g) => !g.resolved && g.inRange && g.state !== 'manifest');
+    if (!wanted) return;
+    const R = this.room;
+    const turned = R ? Math.abs(angDiff(this.yaw, R.yaw)) + Math.abs(this.pitch - R.pitch) : 999;
+    const moved = R ? Math.hypot(this.pos.x - R.pos.x, this.pos.y - R.pos.y) : 999;
+    if (R && this.t - R.t < 2.5 && turned < 10 && moved < 0.5) return;
+    this.roomBusy = true;
+    const view = { M: this.M, w: this.w, h: this.h, focal: this.focal, pitch: this.pitch, yaw: this.yaw, pos: { ...this.pos } };
+    depthGrid(this.video, this.w, this.h).then((g) => {
+      this.roomBusy = false;
+      if (!g || this.ended) return;
+      const room = roomFromDepth(g, view);
+      this.room = { ...view, room, t: this.t };
+      this.log('room', room.floor ? `ahead ${room.ahead.toFixed(1)}m` : 'no floor in view');
+    });
+  }
+
+  // Open floor (m) toward a ghost, from the latest reading; NaN if unknown.
+  freeToward(g) {
+    const R = this.room;
+    if (!R || !R.room.floor || this.t - R.t > 5) return NaN;
+    const p = project(R.M, dirFromAzEl(g.az, 0), R.w, R.h, R.focal);
+    if (!p || p.x < 0 || p.x > R.w) return NaN;
+    return freeAt(R.room, p.x, R.w);
+  }
+
+  // Can this ghost show itself here? Not inside a wall, and not when you're
+  // standing with your face to one. If its spot is behind a wall or a cabinet,
+  // it steps forward onto open floor instead.
+  roomOK(g) {
+    if (this.noCamera || depthState() === 'unavailable' || depthState() === 'idle') return true;
+    if (depthState() === 'loading') return this.t > 25; // don't wait for the model forever
+    const R = this.room;
+    if (!R || this.t - R.t > 5 || Math.abs(angDiff(this.yaw, R.yaw)) > 25) return false; // a fresh look is on its way
+    if (!R.room.floor) return true; // pointing too high to see the floor: trust the geometry
+    const free = this.freeToward(g);
+    if (!Number.isFinite(free)) return true;
+    if (free < 0.9) {
+      if (!g._wallLogged) { g._wallLogged = true; this.log('room', `${g.type} held back: wall ${free.toFixed(1)}m ahead`); }
+      if (this.t > (this._wallHint ?? 0)) {
+        this._wallHint = this.t + 25;
+        this.showHint(rand.pick(['There\'s nothing here but the wall. It\'s somewhere with more room.', 'Not in the wall. Look for open space.', 'Too close to the wall. Step back, or look elsewhere.']));
+      }
+      return false;
+    }
+    // standing behind, peeking around or floating over furniture is the point; don't pull those forward
+    const intendedBehind = g.anchor && (g.anchor.kind === 'behind' || g.anchor.kind === 'peek' || g.anchor.kind === 'hover');
+    if (!intendedBehind && g.dist > free - 0.3) {
+      g.dist = Math.max(1, free - 0.45);
+      g.centerH = BODY[g.type][1];
+      g.el = this.elFor(g);
+      this.toWorld(g);
+      this.log('room', `${g.type} stepped out of the wall to ${g.dist.toFixed(1)}m`);
+    }
+    return true;
+  }
+
+  // The most open bit of floor near screen x: { x, dist } or null.
+  openFloorNear(x) {
+    const R = this.room;
+    if (!R || !R.room.floor || this.t - R.t > 5) return null;
+    let best = null;
+    for (let k = -6; k <= 6; k++) {
+      const px = clamp(x + (k * R.w) / 24, R.w * 0.12, R.w * 0.88);
+      const f = freeAt(R.room, px, R.w);
+      if (!(f >= 1.6)) continue;
+      const score = Math.min(f, 4) - Math.abs(k) * 0.12;
+      if (!best || score > best.score) best = { x: px, dist: clamp(f - 0.45, 1.3, 4), score };
+    }
+    return best;
   }
 
   manifest(g, quiet = false) {

@@ -1,9 +1,9 @@
 // Offline cache for the app shell. CDN models (object detection) are cached on use.
-const CACHE = 'ghosty-v8';
+const CACHE = 'ghosty-v9';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'assets/icon.svg', 'assets/ghosts/mask.webp', 'assets/ghosts/doll_wren.webp', 'assets/ghosts/doll_mimic.webp', 'assets/ghosts/weeper.webp', 'assets/ghosts/stone_drowned.webp', 'assets/sounds/sob_gasps.mp3', 'assets/sounds/sob_wail.mp3', 'assets/sounds/sob_chorus.mp3',
   'js/main.js', 'js/hunt.js', 'js/ghosts.js', 'js/render.js', 'js/audio.js', 'js/sensors.js',
-  'js/voice.js', 'js/music.js', 'js/anchor.js', 'js/surfaces.js', 'js/detect.js', 'js/storage.js', 'js/world.js', 'js/util.js',
+  'js/voice.js', 'js/music.js', 'js/anchor.js', 'js/surfaces.js', 'js/depth.js', 'js/detect.js', 'js/storage.js', 'js/world.js', 'js/util.js',
 ];
 
 self.addEventListener('install', (e) => {
@@ -21,7 +21,7 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(req)
       .then((res) => {
-        if (res.ok && (req.url.startsWith(self.location.origin) || req.url.includes('cdn.jsdelivr.net') || req.url.includes('storage.googleapis.com'))) {
+        if (res.ok && (req.url.startsWith(self.location.origin) || req.url.includes('cdn.jsdelivr.net') || req.url.includes('storage.googleapis.com') || req.url.includes('huggingface.co') || req.url.includes('hf.co'))) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
         }

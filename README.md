@@ -43,6 +43,8 @@ Each one has its own death, and its own idea of what you owe it.
 | The Mimic | Never a person: something that lived in the static of an old party-line telephone exchange. | Sound | Plays your own recorded voice back at you, reversed | Your voice. Starve it with silence. |
 | The Grinning Man | Dr. Lucius Penhallow, 1911. Drank his own strychnine-laced Joy Elixir; the poison locked his face in a grin. | — | Peeks out from behind things, only at the edge of the lens | Riddles. Answer right for film, wrong and lose some. |
 
+Ghosts never stand inside walls. Before one shows itself, a small depth model (Depth Anything V2, ~27 MB, downloaded once and run on the phone) reads how far away things are in the camera image. That depth has no units, so the game calibrates it against the floor: the phone is about 1.4 m above it, so the tilt of the phone gives the real distance to every point on the floor, and following the floor up each column until something rises off it gives the distance to the wall or furniture in that direction. If you're facing a wall, nothing appears there; if a ghost's spot would be behind a wall, it steps forward onto open floor.
+
 Ghosts place themselves against what the camera sees: object detection finds beds, couches, chairs, tables, fridges and people, and each ghost stands beside, behind (with the furniture hiding its legs) or peeking around them, scaled to the object's real size and standing on the floor. With nothing recognisable in view, they stand in the darkest part of the room at a believable distance.
 
 **Spirit radar** uses your GPS to show haunts within ~450 m. They're tied to the real map and shuffle every 3 hours, so people standing in the same place at the same time see the same ghosts. Get within ~70 m and a haunt joins your next hunt from its real compass direction. Play somewhere safe, and only go where you're allowed to be.
@@ -81,6 +83,7 @@ js/voice.js                microphone level, speech recognition, voice recording
 js/detect.js               object detection for emerging ghosts, with a shadow fallback
 js/anchor.js               where a ghost stands relative to detected furniture and people
 js/surfaces.js             finds doors, windows and framed glass in the camera image
+js/depth.js                distance to walls and furniture (depth model + floor geometry)
 js/world.js                deterministic GPS haunts, view/projection math
 js/storage.js              photos in IndexedDB, settings and journal in localStorage
 sw.js                      offline cache

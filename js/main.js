@@ -11,6 +11,7 @@ import { Hunt } from './hunt.js';
 import { music } from './music.js';
 import { startMic, mic } from './voice.js';
 import { loadDetector } from './detect.js';
+import { loadDepth } from './depth.js';
 
 const app = {
   hunt: null,
@@ -101,7 +102,8 @@ const screens = {
   warning() { titleBg.stop(); },
   prepare() {
     titleBg.stop();
-    loadDetector(); // start the download while they get ready
+    loadDetector(); // start the downloads while they get ready
+    loadDepth();
     refreshChecks();
   },
   radar() { titleBg.stop(); radar.start(); },
