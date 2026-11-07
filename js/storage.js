@@ -56,6 +56,7 @@ export const settings = load('ghosty.settings', {
   jumpscares: true,
   intensity: 1, // 0.5 unsettling, 1 terrifying
   subtitles: true,
+  music: true,
   headphones: false, // verified by the knock test
   film: 6,
   lightCal: null, // { bright, dark }

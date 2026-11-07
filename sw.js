@@ -1,9 +1,9 @@
 // Offline cache for the app shell. CDN models (object detection) are cached on use.
-const CACHE = 'ghosty-v1';
+const CACHE = 'ghosty-v2';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'assets/icon.svg',
   'js/main.js', 'js/hunt.js', 'js/ghosts.js', 'js/render.js', 'js/audio.js', 'js/sensors.js',
-  'js/voice.js', 'js/detect.js', 'js/storage.js', 'js/world.js', 'js/util.js',
+  'js/voice.js', 'js/music.js', 'js/detect.js', 'js/storage.js', 'js/world.js', 'js/util.js',
 ];
 
 self.addEventListener('install', (e) => {

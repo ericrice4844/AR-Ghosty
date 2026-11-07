@@ -8,6 +8,7 @@ import { audio } from './audio.js';
 import { drawGhost, drawFX } from './render.js';
 import { photos, settings, saveSettings, progress, resetAll } from './storage.js';
 import { Hunt } from './hunt.js';
+import { music } from './music.js';
 
 const app = {
   hunt: null,
@@ -17,8 +18,17 @@ const app = {
     if (id === 'prepare' && !settings.seenWarning) id = 'warning';
     $$('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
     this.screen = id;
+    this.updateMusic();
     const enter = screens[id];
     if (enter) enter();
+  },
+
+  // Menu music plays everywhere except during a hunt.
+  updateMusic() {
+    const want = settings.music && settings.sound && this.screen !== 'hunt' && audio.running && !document.hidden;
+    if (want) music.start();
+    else music.stop(this.screen === 'hunt' ? 1.2 : 0.6);
+    $('#sound-hint').hidden = audio.running || !settings.sound;
   },
 
   // Left/right knock test. Two correct answers in a row = headphones.
@@ -355,6 +365,9 @@ function renderSettings() {
   bindCheck('#set-sound', 'sound');
   bindCheck('#set-scares', 'jumpscares');
   bindCheck('#set-subs', 'subtitles');
+  bindCheck('#set-music', 'music');
+  $('#set-music').addEventListener('change', () => app.updateMusic());
+  $('#set-sound').addEventListener('change', () => app.updateMusic());
   const intensity = $('#set-intensity');
   intensity.value = String(settings.intensity);
   intensity.onchange = () => { settings.intensity = Number(intensity.value); saveSettings(); };
@@ -396,9 +409,19 @@ function boot() {
     app.go(go.dataset.go);
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && audio.ctx) audio.ctx.suspend();
-    else if (!document.hidden && audio.ctx && app.hunt) audio.ctx.resume();
+    if (document.hidden && audio.ctx) { music.stop(0.1); audio.ctx.suspend(); }
+    else if (!document.hidden && audio.ctx) audio.ctx.resume().then(() => app.updateMusic());
   });
+  // Browsers only allow sound after the first tap.
+  const firstTouch = async () => {
+    if (!settings.sound) return;
+    await audio.unlock();
+    if (audio.running) {
+      document.removeEventListener('pointerdown', firstTouch, true);
+      app.updateMusic();
+    }
+  };
+  document.addEventListener('pointerdown', firstTouch, true);
   audio.enabled = settings.sound;
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   app.go('title');
