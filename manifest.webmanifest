@@ -1,0 +1,14 @@
+{
+  "name": "AR Ghosty",
+  "short_name": "Ghosty",
+  "description": "An augmented reality ghost hunt. Find, photograph and talk to the dead.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#050706",
+  "theme_color": "#050706",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

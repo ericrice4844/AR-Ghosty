@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#050706">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="An augmented reality ghost hunt. Use your phone's camera to find, photograph and talk to the dead.">
+  <title>AR Ghosty</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Special+Elite&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- TITLE -->
+  <section id="title" class="screen active">
+    <canvas id="title-bg"></canvas>
+    <div class="title-inner">
+      <h1>AR&nbsp;Ghosty</h1>
+      <p class="tag">They are already in the room with you.</p>
+      <nav class="menu">
+        <button class="btn primary" data-go="prepare">Begin a hunt</button>
+        <button class="btn" data-go="radar">Spirit radar</button>
+        <button class="btn" data-go="journal">Journal</button>
+        <button class="btn" data-go="gallery">Evidence</button>
+        <button class="btn ghosted" data-go="settings">Settings</button>
+      </nav>
+      <p class="stats" id="title-stats"></p>
+    </div>
+  </section>
+
+  <!-- CONTENT WARNING -->
+  <section id="warning" class="screen panel">
+    <div class="paper">
+      <h2>Before you go looking</h2>
+      <p>This game contains <b>jumpscares</b>, <b>sudden loud sounds</b>, <b>flashing lights</b>, vibration and disturbing imagery and voices. Some ghosts only appear in the dark.</p>
+      <ul>
+        <li>Play somewhere you know, with nothing to trip over. Don't walk while looking at your screen.</li>
+        <li>Never go anywhere you're not allowed to be, and don't play alone outside at night.</li>
+        <li>If you are sensitive to flashing images, turn jumpscares off in Settings.</li>
+      </ul>
+      <p class="fine">Camera, microphone and motion are used only on your device. Nothing is uploaded. Speech recognition may be processed by your browser's provider.</p>
+      <div class="row">
+        <button class="btn" data-go="title">Not tonight</button>
+        <button class="btn primary" id="accept-warning">I understand</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PREPARE -->
+  <section id="prepare" class="screen panel">
+    <div class="paper">
+      <h2>Prepare the lens</h2>
+      <p class="fine">Each ghost has its own rules. Some need darkness. Some must be heard. Some can only be heard through headphones.</p>
+      <ol class="checks">
+        <li id="chk-motion"><span class="dot"></span><div><b>Motion &amp; compass</b><small>So the lens knows where you're pointing.</small></div><button class="btn small" id="do-motion">Allow</button></li>
+        <li id="chk-sound"><span class="dot"></span><div><b>Sound</b><small>Turn your volume up. You should hear a chime.</small></div><button class="btn small" id="do-sound">Test</button></li>
+        <li id="chk-hp"><span class="dot"></span><div><b>Headphones</b> <em>(optional)</em><small>Put them on, then answer which ear you hear knocking in.</small></div><button class="btn small" id="do-hp">Test</button></li>
+        <li id="chk-geo"><span class="dot"></span><div><b>Location</b> <em>(optional)</em><small>Haunts near you will come from their real direction.</small></div><button class="btn small" id="do-geo">Allow</button></li>
+      </ol>
+      <p class="fine">For the darker ones: turn the lights off, or use only your flashlight.</p>
+      <div class="row">
+        <button class="btn" data-go="title">Back</button>
+        <button class="btn primary" id="enter-hunt">Enter</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- HUNT -->
+  <section id="hunt" class="screen">
+    <video id="cam" playsinline muted autoplay></video>
+    <canvas id="view"></canvas>
+    <div id="hud">
+      <div id="compass"><div id="compass-strip"></div><i class="needle"></i></div>
+      <div id="hud-top">
+        <div id="film" title="Exposures left"></div>
+        <div id="score-wrap"><small>SCORE</small><span id="score">0</span></div>
+        <div id="nerve"><small>NERVE</small><div class="bar"><i></i></div></div>
+      </div>
+      <div id="emf" title="EMF"><b></b><b></b><b></b><b></b><b></b><small>EMF</small></div>
+      <div id="status">
+        <button id="st-dark" title="Darkness — tap to calibrate"><span>◐</span><em><i></i></em></button>
+        <button id="st-sound" title="Sound"><span>♪</span></button>
+        <button id="st-hp" title="Headphones — tap to test"><span>🎧</span></button>
+      </div>
+      <div id="calib" class="pop-panel" hidden>
+        <p>Calibrate darkness for your room:</p>
+        <button class="btn small" id="cal-bright">☀ Lights ON — sample</button>
+        <button class="btn small" id="cal-dark">☾ Lights OFF — sample</button>
+        <button class="btn small ghosted" id="cal-reset">Reset</button>
+      </div>
+      <div id="hint"></div>
+      <div id="toast"></div>
+      <div id="subtitle"></div>
+      <div id="you-said"></div>
+      <div id="last-shot"></div>
+      <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <form id="type-bar" hidden autocomplete="off">
+        <input id="type-input" placeholder="Speak to the dead…" maxlength="140" enterkeyhint="send">
+        <button class="btn small">Say</button>
+      </form>
+      <div id="controls">
+        <button id="btn-torch" class="round" title="Flashlight">🔦</button>
+        <button id="btn-talk" class="round big" title="Hold to speak">🎙<small>hold to speak</small></button>
+        <button id="btn-type" class="round" title="Type instead">⌨</button>
+        <button id="btn-end" class="round" title="End hunt">✕</button>
+      </div>
+      <p id="tap-hint">Tap anywhere to take a photo</p>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="screen panel">
+    <div class="paper wide">
+      <h2 id="res-title">The hunt is over</h2>
+      <p id="res-sub" class="fine"></p>
+      <div class="big-score"><small>Score</small><span id="res-score">0</span></div>
+      <h3>Encounters</h3>
+      <ul id="res-enc" class="enc"></ul>
+      <h3>Film</h3>
+      <div id="res-shots" class="shots"></div>
+      <div class="row">
+        <button class="btn" data-go="gallery">All evidence</button>
+        <button class="btn primary" data-go="title">Leave</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- RADAR -->
+  <section id="radar" class="screen panel">
+    <div class="paper wide">
+      <h2>Spirit radar</h2>
+      <p class="fine" id="radar-status">Searching…</p>
+      <canvas id="radar-canvas" width="600" height="600"></canvas>
+      <ul id="radar-list" class="enc"></ul>
+      <p class="fine">Haunts shift every few hours. Walk to within ~70&nbsp;m of one and it will be waiting for you when you start a hunt. Stay safe and only go where you're allowed.</p>
+      <div class="row">
+        <button class="btn" data-go="title">Back</button>
+        <button class="btn primary" data-go="prepare">Hunt here</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- JOURNAL -->
+  <section id="journal" class="screen panel">
+    <div class="paper wide">
+      <h2>Journal of the dead</h2>
+      <p class="fine">What you've learned about them. Talk to them to learn what they want.</p>
+      <div id="journal-list" class="journal"></div>
+      <div class="row"><button class="btn" data-go="title">Back</button></div>
+    </div>
+  </section>
+
+  <!-- GALLERY -->
+  <section id="gallery" class="screen panel">
+    <div class="paper wide">
+      <h2>Evidence</h2>
+      <div id="gallery-grid" class="shots"></div>
+      <div class="row"><button class="btn" data-go="title">Back</button></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="settings" class="screen panel">
+    <div class="paper">
+      <h2>Settings</h2>
+      <label class="opt"><span>Sound</span><input type="checkbox" id="set-sound"></label>
+      <label class="opt"><span>Jumpscares</span><input type="checkbox" id="set-scares"></label>
+      <label class="opt"><span>Scare volume</span>
+        <select id="set-intensity"><option value="0.5">Unsettling</option><option value="1">Terrifying</option></select></label>
+      <label class="opt"><span>Ghost subtitles</span><input type="checkbox" id="set-subs"></label>
+      <label class="opt"><span>Film per hunt</span>
+        <select id="set-film"><option>4</option><option>6</option><option>8</option></select></label>
+      <div class="opt"><span>Headphones <small id="set-hp-state"></small></span><button class="btn small" id="set-hp">Test</button></div>
+      <div class="opt"><span>Darkness calibration</span><button class="btn small" id="set-cal">Reset</button></div>
+      <div class="opt"><span>Erase journal &amp; evidence</span><button class="btn small danger" id="set-reset">Erase</button></div>
+      <div class="row"><button class="btn primary" data-go="title">Done</button></div>
+    </div>
+  </section>
+
+  <!-- MODALS -->
+  <div id="hp-test" class="modal" hidden>
+    <div class="paper">
+      <h2>Which ear?</h2>
+      <p id="hp-msg">Listen…</p>
+      <div class="row">
+        <button class="btn" data-ear="left">◀ Left</button>
+        <button class="btn" data-ear="right">Right ▶</button>
+      </div>
+      <button class="btn ghosted small" id="hp-cancel">I don't have headphones</button>
+    </div>
+  </div>
+  <div id="viewer" class="modal" hidden>
+    <div class="viewer-inner">
+      <img id="viewer-img" alt="Ghost photograph">
+      <p id="viewer-cap"></p>
+      <div class="row">
+        <a class="btn small" id="viewer-dl" download>Save</a>
+        <button class="btn small" id="viewer-share">Share</button>
+        <button class="btn small danger" id="viewer-del">Burn it</button>
+        <button class="btn small primary" id="viewer-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
