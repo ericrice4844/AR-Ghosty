@@ -40,6 +40,7 @@ ul { padding-left: 1.2em; line-height: 1.5; }
 .btn:hover, .btn:focus-visible { background: rgba(183,227,196,0.08); border-color: rgba(183,227,196,0.5); outline: none; }
 .btn.primary { border-color: rgba(183,227,196,0.6); color: var(--accent); }
 .btn.ghosted { opacity: 0.6; }
+a.btn { color: var(--ink); }
 .btn.small { padding: 8px 12px; font-size: 0.75rem; }
 .btn.danger { border-color: rgba(179,32,28,0.6); color: #e46a63; }
 
@@ -181,7 +182,11 @@ ul { padding-left: 1.2em; line-height: 1.5; }
 #radar-canvas { width: min(100%, 420px); aspect-ratio: 1; display: block; margin: 10px auto; }
 
 .opt { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); gap: 12px; }
-.opt small { color: var(--dim); font-family: var(--type); font-size: 0.7rem; }
+.opt-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.opt-text b { font-weight: normal; }
+.opt-text small { color: var(--dim); font-size: 0.85rem; line-height: 1.4; }
+.opt-text em { color: var(--accent); font-style: normal; font-family: var(--type); font-size: 0.7rem; }
+.opt > input, .opt > select, .opt > .btn { flex: none; }
 .opt input[type=checkbox] { width: 22px; height: 22px; accent-color: #6aa47a; }
 .opt select { background: #111; border: 1px solid var(--line); padding: 6px; }
 
