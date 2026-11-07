@@ -9,6 +9,7 @@ import { drawGhost, drawFX } from './render.js';
 import { photos, settings, saveSettings, progress, resetAll } from './storage.js';
 import { Hunt } from './hunt.js';
 import { music } from './music.js';
+import { startMic, mic } from './voice.js';
 import { loadDetector } from './detect.js';
 
 const app = {
@@ -111,7 +112,7 @@ const screens = {
 };
 
 // ---- preparation -----------------------------------------------------------------
-const checks = { motion: null, sound: null, hp: null, geo: null };
+const checks = { motion: null, sound: null, hp: null, geo: null, mic: null };
 function mark(id, ok) {
   const li = $(`#chk-${id}`);
   li.classList.toggle('ok', ok === true);
@@ -122,6 +123,7 @@ function refreshChecks() {
   mark('sound', checks.sound);
   mark('hp', settings.headphones ? true : checks.hp);
   mark('geo', sensors.geo ? true : checks.geo);
+  mark('mic', mic.ok ? true : checks.mic);
 }
 
 async function allowMotion() {
@@ -150,6 +152,11 @@ function bindPrepare() {
     const ok = await app.headphoneTest();
     checks.hp = ok || detected;
     if (detected && !ok) settings.headphones = true, saveSettings();
+    refreshChecks();
+  };
+  $('#do-mic').onclick = async () => {
+    await audio.unlock();
+    checks.mic = await startMic();
     refreshChecks();
   };
   $('#do-geo').onclick = () => {

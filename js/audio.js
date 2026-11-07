@@ -21,6 +21,11 @@ class AudioEngine {
     comp.threshold.value = -14;
     comp.ratio.value = 6;
     this.master.connect(comp).connect(ctx.destination);
+    // How loud the game itself is right now (the mic hears the speaker too).
+    this.outMeter = ctx.createAnalyser();
+    this.outMeter.fftSize = 512;
+    this.outBuf = new Float32Array(512);
+    comp.connect(this.outMeter);
 
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this._impulse(3.2, 2.6);
@@ -47,6 +52,14 @@ class AudioEngine {
       try { await this.ctx.resume(); } catch { /* needs gesture */ }
     }
     return this.ctx && this.ctx.state === 'running';
+  }
+
+  outLevel() {
+    if (!this.outMeter) return 0;
+    this.outMeter.getFloatTimeDomainData(this.outBuf);
+    let s = 0;
+    for (let i = 0; i < this.outBuf.length; i++) s += this.outBuf[i] * this.outBuf[i];
+    return Math.min(1, Math.sqrt(s / this.outBuf.length) * 4);
   }
 
   get running() { return !!this.ctx && this.ctx.state === 'running'; }
@@ -402,6 +415,92 @@ class AudioEngine {
     s.connect(bp).connect(g).connect(dest);
     s.start();
     return b.duration / rate;
+  }
+
+  // A ghost screaming from where it is (not the full-screen jumpscare).
+  scream(dest, pitch = 1) {
+    const t = this.ctx.currentTime + 0.02;
+    const dur = rand.range(1.1, 1.8);
+    const f = rand.range(520, 760) * pitch;
+    this._voiced(dest, t, f, dur, 0.9, 'a', { fall: 0.6, vib: 9, vibDepth: 40, breath: 0.7, formantShift: 1.25 });
+    this._voiced(dest, t + 0.03, f * 1.5, dur * 0.9, 0.4, 'e', { fall: 0.55, vib: 11, vibDepth: 30, breath: 0.5 });
+    const n = this._noiseSrc(t, dur);
+    const g = this.ctx.createGain();
+    this._env(g, t, 0.02, 0.5, dur * 0.6, dur * 0.3);
+    n.connect(this._filt('highpass', 1800)).connect(g).connect(dest);
+    return dur;
+  }
+
+  // "Shhhhhhhh" — loud, close, everywhere.
+  hiss(dest, dur = 1.6) {
+    const t = this.ctx.currentTime + 0.02;
+    const n = this._noiseSrc(t, dur);
+    const g = this.ctx.createGain();
+    this._env(g, t, 0.15, 1.1, dur * 0.6, dur * 0.3);
+    n.connect(this._bp(3800, 1.4)).connect(g).connect(dest);
+    return dur;
+  }
+
+  // Knocking on a real surface. material: wood | glass | metal
+  // pattern: list of gaps (s) between knocks.
+  knockOn(dest, material = 'wood', pattern = [0.32, 0.32]) {
+    const ctx = this.ctx;
+    let t = ctx.currentTime + 0.05;
+    const hits = [0, ...pattern];
+    for (const gap of hits) {
+      t += gap;
+      const v = rand.range(0.7, 1);
+      if (material === 'glass') {
+        // knuckle on a pane: a tick and a short glassy ring
+        const n = this._noiseSrc(t, 0.03);
+        const ng = ctx.createGain();
+        this._env(ng, t, 0.001, 0.6 * v, 0.004, 0.02);
+        n.connect(this._bp(3200, 2)).connect(ng).connect(dest);
+        for (const f of [1850, 2930, 4410].map((x) => x * rand.range(0.96, 1.04))) {
+          const o = ctx.createOscillator();
+          o.frequency.value = f;
+          const g = ctx.createGain();
+          this._env(g, t, 0.001, 0.08 * v, 0.005, 0.18);
+          o.connect(g).connect(dest);
+          o.start(t); o.stop(t + 0.25);
+        }
+        const th = ctx.createOscillator();
+        th.frequency.setValueAtTime(220, t);
+        th.frequency.exponentialRampToValueAtTime(120, t + 0.06);
+        const tg = ctx.createGain();
+        this._env(tg, t, 0.001, 0.4 * v, 0.005, 0.06);
+        th.connect(tg).connect(dest);
+        th.start(t); th.stop(t + 0.1);
+      } else if (material === 'metal') {
+        for (const f of [180, 433, 911].map((x) => x * rand.range(0.97, 1.03))) {
+          const o = ctx.createOscillator();
+          o.type = 'triangle';
+          o.frequency.value = f;
+          const g = ctx.createGain();
+          this._env(g, t, 0.001, 0.25 * v, 0.01, 0.5);
+          o.connect(g).connect(dest);
+          o.start(t); o.stop(t + 0.6);
+        }
+        const n = this._noiseSrc(t, 0.05);
+        const ng = ctx.createGain();
+        this._env(ng, t, 0.001, 0.5 * v, 0.005, 0.04);
+        n.connect(this._bp(1500, 1)).connect(ng).connect(dest);
+      } else {
+        // knuckles on a wooden door
+        const o = ctx.createOscillator();
+        o.frequency.setValueAtTime(rand.range(150, 190), t);
+        o.frequency.exponentialRampToValueAtTime(70, t + 0.09);
+        const g = ctx.createGain();
+        this._env(g, t, 0.001, 1.0 * v, 0.008, 0.12);
+        o.connect(g).connect(dest);
+        o.start(t); o.stop(t + 0.18);
+        const n = this._noiseSrc(t, 0.06);
+        const ng = ctx.createGain();
+        this._env(ng, t, 0.001, 0.7 * v, 0.006, 0.05);
+        n.connect(this._filt('lowpass', 900, 2)).connect(ng).connect(dest);
+      }
+    }
+    return t - ctx.currentTime + 0.3;
   }
 
   // ---- non-spatial effects ---------------------------------------------------

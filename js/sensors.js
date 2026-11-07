@@ -115,6 +115,11 @@ export function darkness(cal) {
 
 // ---- motion -------------------------------------------------------------------
 export async function requestMotionPermission() {
+  // iOS asks separately for motion (used to count your steps)
+  const DME = window.DeviceMotionEvent;
+  if (DME && typeof DME.requestPermission === 'function') {
+    try { await DME.requestPermission(); } catch { /* steps just won't count */ }
+  }
   const DOE = window.DeviceOrientationEvent;
   if (DOE && typeof DOE.requestPermission === 'function') {
     try {
@@ -142,6 +147,37 @@ export function startOrientation() {
   };
   if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', handle(true));
   window.addEventListener('deviceorientation', handle(false));
+}
+
+// ---- steps ---------------------------------------------------------------------
+// Counts footsteps from the accelerometer (peaks in the bounce of walking), so
+// the game knows when you've walked somewhere.
+export const steps = { count: 0, last: 0, active: false };
+let motionBound = false;
+export function startSteps() {
+  if (motionBound) return;
+  motionBound = true;
+  let lp = 0, base = null, armed = true;
+  window.addEventListener('devicemotion', (e) => {
+    const a = e.acceleration;
+    let m;
+    if (a && a.x != null) m = Math.hypot(a.x, a.y, a.z);
+    else if (e.accelerationIncludingGravity?.x != null) {
+      const g = e.accelerationIncludingGravity;
+      m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81);
+    } else return;
+    steps.active = true;
+    lp = lp * 0.75 + m * 0.25;
+    base = base == null ? lp : base * 0.98 + lp * 0.02;
+    const now = performance.now();
+    if (armed && lp > base + 1.1 && now - steps.last > 300) {
+      armed = false;
+      steps.count++;
+      steps.last = now;
+    } else if (!armed && lp < base + 0.35) {
+      armed = true;
+    }
+  });
 }
 
 export const hasMotion = () => sensors.orient.last > 0 && performance.now() - sensors.orient.last < 2000;

@@ -50,6 +50,23 @@ export function sampleMic() {
   return mic.level;
 }
 
+// Grab a couple of seconds of whatever the room sounds like right now (the
+// Mimic keeps the noises you make).
+export function recordSnippet(seconds = 2.5) {
+  return new Promise((resolve) => {
+    if (!mic.stream || !window.MediaRecorder) { resolve(null); return; }
+    let r;
+    const parts = [];
+    try { r = new MediaRecorder(mic.stream); } catch { resolve(null); return; }
+    r.ondataavailable = (e) => e.data.size && parts.push(e.data);
+    r.onstop = async () => {
+      try { resolve(await audio.ctx.decodeAudioData(await new Blob(parts, { type: r.mimeType }).arrayBuffer())); } catch { resolve(null); }
+    };
+    r.start();
+    setTimeout(() => { try { r.stop(); } catch { resolve(null); } }, seconds * 1000);
+  });
+}
+
 // ---- listening -------------------------------------------------------------------
 let rec = null;
 let recorder = null;

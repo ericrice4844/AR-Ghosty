@@ -9,10 +9,13 @@ It's a plain web app (HTML + ES modules, no build step) that runs in a mobile br
 ## How to play
 
 1. **Begin a hunt** → allow motion, test your sound, optionally test headphones and allow location.
-2. **Look around slowly.** Hints appear on screen ("Muffled sobbing, behind you, to the left"). The **EMF meter** climbs when you face a presence, cold **mist** creeps in from the side it's on, and every ghost's sounds are placed in 3D, so headphones help a lot.
-3. **Hold still on a presence** and it shows itself. **Tap anywhere to take a photo.** You only get a few exposures per hunt (6 by default). Photos score higher when the ghost is close, centred, enraged, or one you've never photographed before. Sometimes something turns up in a photo that wasn't visible on screen.
-4. **Hold the 🎙 button to speak** (or ⌨ to type). Ask them who they are, what they want, what happened. Each ghost wants something. Give it what it wants and you'll be rewarded, often with extra film.
-5. Your **nerve** drops when something attacks you or when dangerous things stay close. When it runs out, you flee and the hunt ends.
+2. **Look around slowly, and walk.** Most ghosts aren't in the room you start in. The phone counts your footsteps, and a ghost only shows itself once you're within a few metres of it. Hints tell you when something is further away.
+3. **Listen.** Hints appear on screen ("Muffled sobbing, behind you, to the left"). The **EMF meter** climbs when you face a presence, cold **mist** creeps in from the side it's on, and every ghost's sounds are placed in 3D, so headphones help a lot.
+4. **Hold still on a presence** and it shows itself. **Tap anywhere to take a photo.** You only get a few exposures per hunt (6 by default). Photos score higher when the ghost is close, centred, enraged, or one you've never photographed before. Sometimes something turns up in a photo that wasn't visible on screen.
+5. **Hold the 🎙 button to speak** (or ⌨ to type). Ask them who they are, what they want, what happened. Each ghost wants something. Give it what it wants and you'll be rewarded, often with extra film.
+6. **Keep quiet.** The microphone is always listening. A cough or a bump sets them off: the Widow screams, the Hollow Man yells for quiet, Wren and the Lantern run off and hide, the Drowned sinks away, the Whisperer hisses in your ears, the Crawler hunts by sound, and the Mimic keeps the noise and plays it back to you later. Tap 🎙 in the status column to mute it.
+7. **Watch the house.** Something knocks on doors, windows, glass and furniture the camera can see. Now and then, a figure stands inside a mirror, a picture frame or a dark TV screen, and is gone if you look away. You can photograph it.
+8. Your **nerve** drops when something attacks you or when dangerous things stay close. When it runs out, you flee and the hunt ends.
 
 The ghosts in a hunt share a story. More than one of them was hurt by the same man, and some will tell you his name if you ask the right one the right way. Somebody else is very interested in that name.
 
@@ -62,7 +65,7 @@ Camera, motion and microphone access require **HTTPS** (or `localhost`).
 
 ### Debug
 
-Add `?debug` to the URL for an overlay showing ghost state, and keys **d** (force darkness), **h** (toggle headphones), **s** (trigger an attack). `?debug&ghosts=crawler,weeper` forces a specific line-up.
+Add `?debug` to the URL for an overlay showing ghost state, and keys **d** (force darkness), **h** (toggle headphones), **s** (trigger an attack), **n** (make a noise), **k** (knock soon), **m** (try a mirror figure). **W**/**S** walk forward/back on desktop. `?debug&ghosts=crawler,weeper` forces a specific line-up (in the room; add `&far` to put them elsewhere in the house), and `&nodebugtext` hides the overlay.
 
 ## How it's built
 
@@ -77,6 +80,7 @@ js/sensors.js              camera, torch, light meter, device orientation/compas
 js/voice.js                microphone level, speech recognition, voice recording (for the Mimic), ghost speech
 js/detect.js               object detection for emerging ghosts, with a shadow fallback
 js/anchor.js               where a ghost stands relative to detected furniture and people
+js/surfaces.js             finds doors, windows and framed glass in the camera image
 js/world.js                deterministic GPS haunts, view/projection math
 js/storage.js              photos in IndexedDB, settings and journal in localStorage
 sw.js                      offline cache

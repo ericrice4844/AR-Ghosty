@@ -2,12 +2,13 @@
 import { $, rand, clamp, smooth, angDiff, norm360, vibrate, corruptText, fmtTime, DEG } from './util.js';
 import { GHOSTS, pickGhostType, newLore, classify, dirPhrase, OUTCOME_TEXT } from './ghosts.js';
 import { dirFromAzEl, azElFromDir, viewForward, project, unproject, angleBetween, HAUNT_RANGE_M } from './world.js';
-import { sensors, startCamera, stopCamera, setTorch, darkness, currentView, hasMotion, bindManualLook, detectHeadphones } from './sensors.js';
+import { sensors, startCamera, stopCamera, setTorch, darkness, currentView, hasMotion, bindManualLook, detectHeadphones, steps, startSteps } from './sensors.js';
 import { audio } from './audio.js';
-import { mic, startMic, sampleMic, listen, stopListening, speak, hush, canRecognize } from './voice.js';
+import { mic, startMic, sampleMic, listen, stopListening, speak, hush, canRecognize, recordSnippet } from './voice.js';
 import { drawGhost, drawEdgeHands, drawScare, drawFX } from './render.js';
 import { findObjects, loadDetector, detectorState } from './detect.js';
 import { placeGhost, ANCHOR, PLACE_TEXT } from './anchor.js';
+import { findSurfaces } from './surfaces.js';
 import { photos, settings, saveSettings, progress, saveProgress } from './storage.js';
 
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -18,6 +19,10 @@ const BODY = {
   drowned: [1.3, 0.65], crawler: [0.85, 0.4], mimic: [1.75, 0.88], grinner: [1.85, 0.93],
 };
 const FILM_CAP = 12;
+// Ghosts only show themselves within this distance (m). Further away you hear
+// them, feel them on the EMF, and have to walk to them.
+const NEAR = 4.2;
+const STRIDE = 0.7;
 
 export class Hunt {
   constructor(app, { haunts = [], night = false } = {}) {
@@ -44,6 +49,18 @@ export class Hunt {
     this.headphones = settings.headphones;
     this.forceDark = false;
     this.toastQ = [];
+    this.pos = { x: 0, y: 0 }; // where you are in the house (m, east/north of where you started)
+    this.walked = 0;
+    this.noiseFloor = 0.05;
+    this.noiseHold = 0;
+    this.quietUntil = 0;
+    this.nextNoiseOk = 0;
+    this.surfaces = [];
+    this.nextScan = 3;
+    this.nextKnock = rand.range(18, 32);
+    this.nextMirror = rand.range(35, 60);
+    this.mirrorFx = null;
+    this.knockFx = null;
   }
 
   // ---- lifecycle ----------------------------------------------------------------
@@ -69,13 +86,15 @@ export class Hunt {
     audio.setEnabled(settings.sound);
     audio.startAmbience();
     await startMic();
+    startSteps();
+    this.stepsSeen = steps.count;
     if (!this.headphones) this.headphones = await detectHeadphones();
     this.spawn();
     if (!this.noCamera) loadDetector(); // ghosts need to know where the furniture is
 
     this.last = performance.now();
     this.raf = requestAnimationFrame((t) => this.frame(t));
-    this.toast(hasMotion() ? 'Move your phone slowly. Listen.' : 'Drag to look around. Listen.', 4);
+    this.toast(hasMotion() ? 'Move your phone slowly. Listen. Some of them are not in this room.' : 'Drag to look around, W/S to walk. Listen.', 5);
     this.updateHud(true);
   }
 
@@ -104,12 +123,16 @@ export class Hunt {
   // ---- spawning --------------------------------------------------------------------
   spawn() {
     const types = new Set();
+    let nearCount = 0;
     const add = (type, az, extra = {}) => {
       if (types.has(type)) return;
       types.add(type);
       const def = GHOSTS[type];
       const [hm, ch] = BODY[type];
-      const dist = rand.range(1.8, 3.4);
+      // Most are somewhere else in the house; one or two are in this room.
+      const near = extra.near ?? (nearCount < 1 || rand() < 0.3);
+      if (near) nearCount++;
+      const dist = extra.dist ?? (near ? rand.range(2, 3.6) : rand.range(4.8, 8.5));
       const g = {
         uid: `${type}-${Math.random().toString(36).slice(2, 7)}`,
         type, def, az: norm360(az), dist, heightM: hm, centerH: ch,
@@ -118,6 +141,7 @@ export class Hunt {
         emerge: null, approach: 0, lit: 0, speaking: 0, photos: 0, wander: rand.range(-1, 1), ...extra,
       };
       g.el = this.elFor(g);
+      this.toWorld(g);
       g.voice = audio.ctx ? audio.makeVoice() : null;
       this.ghosts.push(g);
     };
@@ -125,11 +149,12 @@ export class Hunt {
     // ?debug&ghosts=crawler,weeper forces a line-up (for testing).
     const forced = DEBUG && new URLSearchParams(location.search).get('ghosts');
     if (forced) {
-      forced.split(',').filter((t) => GHOSTS[t]).forEach((t, i) => add(t, i * 90));
+      const far = new URLSearchParams(location.search).has('far');
+      forced.split(',').filter((t) => GHOSTS[t]).forEach((t, i) => add(t, i * 90, { near: !far }));
       return;
     }
     // Haunts you're standing in come to you from their real direction.
-    for (const h of this.haunts) if (h.dist <= HAUNT_RANGE_M) add(h.type, h.bearing, { haunt: h.id });
+    for (const h of this.haunts) if (h.dist <= HAUNT_RANGE_M) add(h.type, h.bearing, { haunt: h.id, near: false, dist: clamp(h.dist / 8, 4.8, 9) });
 
     const want = clamp(3 + (this.night ? 1 : 0) - this.ghosts.length, 1, 4);
     const target = this.ghosts.length + want;
@@ -152,10 +177,38 @@ export class Hunt {
     return Math.atan2(g.centerH - EYE_H, g.dist) / DEG;
   }
 
+  // Ghosts live at fixed points in the house; az/dist are relative to you.
+  toWorld(g) {
+    g.wx = this.pos.x + Math.sin(g.az * DEG) * g.dist;
+    g.wy = this.pos.y + Math.cos(g.az * DEG) * g.dist;
+  }
+
+  fromWorld(g) {
+    const dx = g.wx - this.pos.x, dy = g.wy - this.pos.y;
+    g.dist = Math.max(0.5, Math.hypot(dx, dy));
+    g.az = norm360(Math.atan2(dx, dy) / DEG);
+  }
+
+  // When we learn a ghost's exact elevation (from furniture), remember its
+  // height so it stays on the floor as you walk around it.
+  fixHeight(g) {
+    g.centerH = EYE_H + Math.tan(g.el * DEG) * g.dist;
+  }
+
+  walk(n) {
+    const d = Math.sign(n) * Math.abs(n) * STRIDE;
+    this.pos.x += Math.sin((this.yaw || 0) * DEG) * d;
+    this.pos.y += Math.cos((this.yaw || 0) * DEG) * d;
+    this.walked += Math.abs(d);
+  }
+
   relocate(g, opts = {}) {
     const yaw = this.yaw ?? 0;
     g.az = norm360(opts.behind ? yaw + 180 + rand.range(-50, 50) : g.az + rand.range(70, 200) * (rand() < 0.5 ? -1 : 1));
-    g.dist = rand.range(1.8, 3.4);
+    // usually somewhere else in the house: you'll have to go after it
+    g.dist = opts.near ? rand.range(2, 3.4) : rand.range(4.8, 8.5);
+    g.centerH = BODY[g.type][1];
+    g.emerge = g.def.behavior === 'emerge' ? null : g.emerge;
     g.anchor = null;
     g.anchorSince = null;
     g.el = this.elFor(g);
@@ -163,6 +216,7 @@ export class Hunt {
     g.facing = 0;
     g.manifestFor = 0;
     if (g.state === 'manifest') g.state = 'lurking';
+    this.toWorld(g);
   }
 
   // ---- requirements -------------------------------------------------------------------
@@ -200,12 +254,21 @@ export class Hunt {
     const look = azElFromDir(fwd);
     this.yaw = look.az;
     this.pitch = look.el;
-    const level = sampleMic();
+    const level = this.micOff ? 0 : sampleMic();
     const cond = this.conditions();
     this.cond = cond;
 
+    // Footsteps carry you through the house.
+    if (steps.count !== this.stepsSeen) { this.walk(steps.count - this.stepsSeen); this.stepsSeen = steps.count; }
+    this.listenForNoise(level, dt);
+    this.updateSurfaces(dt);
+
     let emf = 0, dread = 0, threatNear = 0;
     for (const g of this.ghosts) {
+      if (g.emerge?.phase !== 'rise') {
+        this.fromWorld(g);
+        g.el = this.elFor(g);
+      }
       const dir = dirFromAzEl(g.az, g.el);
       g.dir = dir;
       g.angle = angleBetween(fwd, dir);
@@ -213,16 +276,17 @@ export class Hunt {
       g.proj = project(M, dir, w, h, this.focal);
       g.size = (this.focal * g.heightM) / g.dist;
       this.updateGhost(g, dt, cond, level);
+      if (g.emerge?.phase !== 'rise') this.toWorld(g);
 
       if (!g.resolved) {
-        const presence = Math.pow(clamp(1 - g.angle / 150, 0, 1), 2.5);
+        const presence = Math.pow(clamp(1 - g.angle / 150, 0, 1), 2.5) * clamp(1.5 - g.dist / 7, 0.15, 1);
         const k = g.blocked ? 0.55 : 1;
         emf = Math.max(emf, presence * k * (0.7 + g.vis * 0.5) + g.agit / 400);
         dread = Math.max(dread, (g.def.threat / 5) * (0.3 + presence * 0.5 + g.vis * 0.4));
         if (g.def.threat >= 4 && g.vis > 0.3) threatNear = Math.max(threatNear, g.vis);
       }
       if (g.voice && audio.running) {
-        audio.placeVoice(g.voice, g.rel, g.el - this.pitch, Math.max(0.6, g.dist * 0.6));
+        audio.placeVoice(g.voice, g.rel, g.el - this.pitch, Math.max(0.6, g.dist * 0.75));
         g.voice.input.gain.setTargetAtTime(g.resolved ? 0 : g.blocked === 'dark' ? 0.35 : 1, audio.now(), 0.2);
       }
       this.ghostSounds(g, cond);
@@ -274,6 +338,16 @@ export class Hunt {
     }
     if (g.state === 'dormant') g.state = 'lurking';
 
+    // Too far away to see: you'll have to go to it.
+    g.inRange = g.dist <= NEAR || (g.emerge && g.emerge.phase !== 'seek');
+    if (!g.inRange) {
+      if (g.state === 'manifest' && def.behavior !== 'stalker') g.state = 'lurking';
+      g.vis = smooth(g.vis, 0, 3, dt);
+      g.facing = 0;
+      if (g.def.behavior === 'drift' && g.state === 'lurking') { g.wx += (rand() - 0.5) * 0.3 * dt; g.wy += (rand() - 0.5) * 0.3 * dt; }
+      return;
+    }
+
     const onScreen = g.proj && g.proj.x > -g.size * 0.3 && g.proj.x < this.w + g.size * 0.3 && g.proj.y > -g.size && g.proj.y < this.h + g.size;
     const facingNow = g.angle < 28;
     g.facing = facingNow ? g.facing + dt : Math.max(0, g.facing - dt * 0.5);
@@ -283,7 +357,7 @@ export class Hunt {
       case 'drift': {
         // Lingers just out of sight, drifts slowly, shows itself when you hold still on it.
         if (g.state === 'lurking') {
-          g.az = norm360(g.az + g.wander * 2 * dt);
+          g.az = norm360(g.az + g.wander * 0.8 * dt);
           if (g.facing > 1.2 && this.anchorReady(g)) this.manifest(g);
           else if (onScreen && g.angle < 40 && Math.random() < 0.002) target = 0.25; // a glimpse
         }
@@ -292,7 +366,7 @@ export class Hunt {
           target = 1;
           const linger = g.type === 'hollow' ? 30 : 16;
           if (g.manifestFor > linger && g.speaking <= 0 && (this.t - this.lastSpeech) > 8) {
-            this.relocate(g);
+            this.relocate(g, { near: rand() < 0.3 });
             if (g.type !== 'lantern') this.toast(`${def.name} is gone. For now.`);
           }
           if (g.type === 'hollow' && g.angle < 10) g.agit += 5 * dt; // he doesn't like being stared at
@@ -333,7 +407,6 @@ export class Hunt {
           target = 1;
           if (cond.torch && g.angle < 22) { g.agit += 28 * dt; if (!g.mem.warned) { g.mem.warned = true; this.toast('The sobbing catches. She doesn\'t like the light.'); } }
           if (g.angle < 8) g.agit += 2 * dt;
-          if (level > 0.45) g.agit += 60 * dt * level;
         }
         break;
       }
@@ -345,7 +418,6 @@ export class Hunt {
     }
 
     if (g.type === 'mimic' && g.state !== 'dormant') {
-      if (level > 0.22) { g.agit += 12 * dt; this.lastNoise = this.t; }
       if (g.encountered && this.t - Math.max(this.lastSpeech, this.lastNoise ?? 0, g.encounteredAt) > 30) {
         this.say(g, '...', true);
         this.resolve(g, 'starved');
@@ -370,6 +442,7 @@ export class Hunt {
         E.pending = true;
         findObjects(this.video, this.w, this.h, def.emergeFrom || []).then((objs) => {
           E.pending = false;
+          if (objs) this.lastObjs = { objs, t: this.t };
           if (!objs || E.phase !== 'seek' || !this.M) return;
           const ok = objs.filter((o) => o.w > this.w * 0.08 && o.h > this.h * 0.05 && o.x + o.w / 2 > this.w * 0.1 && o.x + o.w / 2 < this.w * 0.9);
           E.tries++;
@@ -396,7 +469,9 @@ export class Hunt {
           const cy = g.type === 'crawler' ? b.y + b.h * 0.8 : b.y + b.h * 0.4 - size * 0.45;
           const d = azElFromDir(unproject(this.M, b.x + b.w / 2, cy, this.w, this.h, this.focal));
           g.az = d.az; g.el = d.el;
+          this.fixHeight(g);
         }
+        this.toWorld(g);
       }
       return;
     }
@@ -405,13 +480,15 @@ export class Hunt {
     if (def.behavior === 'stalker') {
       const watched = onScreen && g.angle < 30;
       g.moving = !watched;
-      if (!watched) {
-        // It moves when you look away. Always toward you, and around behind you.
+      if (!watched && g.dist < 6) {
+        // It moves when you look away: toward you, and around behind you.
         g.approach += dt * 0.045;
         g.az = norm360(g.az + clamp(angDiff(this.yaw + 180, g.az), -1, 1) * 14 * dt);
         if (!g.mem.moveWarn) { g.mem.moveWarn = true; this.toast('You hear it move.'); }
       }
-      g.dist = clamp(4.2 - g.approach * 3.6, 0.6, 5);
+      if (!watched && g.dist < 6) g.dist = Math.max(0.6, g.dist - dt * 0.17);
+      g.approach = clamp((4.2 - g.dist) / 3.6, 0, 1);
+      g.centerH = BODY.crawler[1];
       g.el = this.elFor(g);
       setTarget(1);
       if (cond.torch && g.angle < 16) {
@@ -487,6 +564,7 @@ export class Hunt {
     const nearX = g.proj ? g.proj.x : w / 2;
     findObjects(this.video, w, h, ANCHOR[g.type].on).then((objs) => {
       g.anchoring = false;
+      if (objs) this.lastObjs = { objs, t: this.t };
       if (!objs || g.resolved || this.ended) return; // detector busy: try again next frame
       this.applyPlacement(g, placeGhost(g.type, g.heightM, objs, { w, h, focal, nearX }), M);
     });
@@ -498,8 +576,9 @@ export class Hunt {
     if (!pl || pl.kind === 'dark') {
       const x = pl ? pl.x : g.proj ? clamp(g.proj.x, w * 0.2, w * 0.8) : w / 2;
       g.az = azElFromDir(unproject(M, x, h / 2, w, h, focal)).az;
-      g.dist = rand.range(2, 3.2);
+      g.dist = clamp(g.dist, 2, 3.6);
       g.el = this.elFor(g);
+      this.toWorld(g);
       g.anchor = { kind: 'floor', exclude: [] };
       this.log('place', `${g.type}: floor`);
       return;
@@ -508,21 +587,40 @@ export class Hunt {
     g.az = d.az;
     g.el = d.el;
     g.dist = clamp((focal * g.heightM) / pl.size, 0.6, 9);
-    g.anchor = { kind: pl.kind, cls: pl.cls, exclude: pl.exclude.map((r) => this.angBox(r, M)) };
+    this.fixHeight(g);
+    this.toWorld(g);
+    g.anchor = { kind: pl.kind, cls: pl.cls, exclude: pl.exclude.map((r) => this.angBox(r, M, g.dist * 0.85)) };
     this.log('place', `${g.type}: ${pl.kind} ${pl.cls} x=${pl.x.toFixed(0)} foot=${pl.footY.toFixed(0)} size=${pl.size.toFixed(0)} -> el=${g.el.toFixed(1)} dist=${g.dist.toFixed(2)} pitchNow=${this.pitch.toFixed(1)}`);
     if (PLACE_TEXT[pl.kind] && g.def.behavior !== 'peripheral') setTimeout(() => this.showHint(PLACE_TEXT[pl.kind](pl.cls)), 300);
   }
 
   // Screen rect <-> angular box, so things stay pinned to the room as you turn.
-  angBox(r, M = this.M) {
+  // With `depth` (m) the box is pinned to a point in the house, so it stays put
+  // (and gets bigger) as you walk up to it. Without, it's pinned to a direction.
+  angBox(r, M = this.M, depth = null) {
     const d = azElFromDir(unproject(M, r.x + r.w / 2, r.y + r.h / 2, this.w, this.h, this.focal));
-    return { az: d.az, el: d.el, aw: r.w / this.focal, ah: r.h / this.focal };
+    const b = { az: d.az, el: d.el, aw: r.w / this.focal, ah: r.h / this.focal };
+    if (depth) {
+      b.wx = this.pos.x + Math.sin(d.az * DEG) * depth;
+      b.wy = this.pos.y + Math.cos(d.az * DEG) * depth;
+      b.hc = EYE_H + Math.tan(d.el * DEG) * depth;
+      b.wm = b.aw * depth;
+      b.hm = b.ah * depth;
+    }
+    return b;
   }
 
   screenBox(b) {
-    const p = project(this.M, dirFromAzEl(b.az, b.el), this.w, this.h, this.focal);
+    let az = b.az, el = b.el, aw = b.aw, ah = b.ah;
+    if (b.wx != null) {
+      const dx = b.wx - this.pos.x, dy = b.wy - this.pos.y, dist = Math.max(0.4, Math.hypot(dx, dy));
+      az = Math.atan2(dx, dy) / DEG;
+      el = Math.atan2(b.hc - EYE_H, dist) / DEG;
+      aw = b.wm / dist; ah = b.hm / dist;
+    }
+    const p = project(this.M, dirFromAzEl(az, el), this.w, this.h, this.focal);
     if (!p) return null;
-    const bw = b.aw * this.focal, bh = b.ah * this.focal;
+    const bw = aw * this.focal, bh = ah * this.focal;
     return { x: p.x - bw / 2, y: p.y - bh / 2, w: bw, h: bh };
   }
 
@@ -538,7 +636,7 @@ export class Hunt {
       saveProgress();
       this.log('manifest', g.type);
     }
-    if (!quiet && audio.running) audio.sting(g.def.threat >= 4 ? 0.7 : 0.35);
+    if (!quiet && audio.running) { audio.sting(g.def.threat >= 4 ? 0.7 : 0.35); this.hush(2); }
     if (first) {
       this.toast(`${g.def.name} — ${g.def.epithet}.`, 4);
       if (g.def.threat >= 4) vibrate([60, 40, 120]);
@@ -571,7 +669,179 @@ export class Hunt {
     g.nextSound = this.t + dur + (s === 'sob' ? rand.range(0.5, 2.5) : busy);
   }
 
-  // ---- outcomes ---------------------------------------------------------------------
+  // ---- they can hear you ---------------------------------------------------------------
+  // Sudden noises (a cough, a bump, a word) set them off. The game's own sound
+  // comes out of the same phone, so loud moments from the speaker are ignored.
+  listenForNoise(level, dt) {
+    if (!mic.ok || this.micOff) return;
+    const out = audio.running ? audio.outLevel() : 0;
+    if (level < this.noiseFloor * 2) this.noiseFloor += (level - this.noiseFloor) * Math.min(1, dt * 0.5);
+    const thresh = Math.max(0.28, this.noiseFloor * 3.5) + out * 1.4;
+    const quiet = this.listening || this.t < this.quietUntil || this.scare;
+    this.noiseHold = !quiet && level > thresh ? this.noiseHold + dt : 0;
+    this.micHot = level > thresh * 0.8;
+    if (this.noiseHold > 0.08 && this.t > this.nextNoiseOk) {
+      this.nextNoiseOk = this.t + 3;
+      this.noiseHold = 0;
+      this.onNoise(clamp((level - thresh) / 0.4 + 0.5, 0.5, 1));
+    }
+  }
+
+  hush(seconds) {
+    this.quietUntil = Math.max(this.quietUntil, this.t + seconds);
+  }
+
+  onNoise(loud) {
+    this.lastNoise = this.t;
+    this.log('noise', loud.toFixed(2));
+    const near = this.ghosts
+      .filter((g) => !g.resolved && g.state !== 'dormant' && g.blocked !== 'sound' && g.dist < 9)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 2);
+    if (!near.length) return;
+    if (!this._heardOnce) { this._heardOnce = true; setTimeout(() => this.toast('They heard that.', 3), 400); }
+    for (const g of near) this.reactToNoise(g, loud);
+    if (this.mimicWants()) recordSnippet(2.2).then((b) => { if (b) this.mimicBuffer = b; });
+  }
+
+  mimicWants() {
+    return this.ghosts.some((g) => g.type === 'mimic' && !g.resolved);
+  }
+
+  reactToNoise(g, loud) {
+    const v = g.voice?.input;
+    const close = g.dist < NEAR;
+    switch (g.type) {
+      case 'weeper': // she screams, and if she's already upset she comes for you
+        if (audio.running && v) this.hush(audio.scream(v, 0.9) + 0.5);
+        this.subtitle(g, '*SHE SCREAMS*');
+        g.agit += 45 * loud;
+        vibrate([80, 40, 160]);
+        if (close && g.state === 'manifest' && g.agit > 70) setTimeout(() => this.attack(g), 900);
+        break;
+      case 'hollow': // he yells for quiet
+        this.say(g, rand.pick(['QUIET.', 'Hold your tongue.', 'I SAID QUIET.', 'Do you WANT him to hear you?']));
+        g.agit += 30 * loud;
+        break;
+      case 'wren': // she runs away and hides
+        if (g.mem.hiding) break;
+        this.say(g, rand.pick(['Too loud! Too loud!', 'You scared me!', 'Mama says no shouting!']));
+        if (audio.running && v) audio.giggle(v);
+        setTimeout(() => { this.relocate(g); this.toast('Little footsteps run away from you.', 3); }, 1200);
+        break;
+      case 'lantern':
+        this.subtitle(g, '*the light gutters and flees*');
+        if (audio.running && v) audio.chime(v);
+        setTimeout(() => this.relocate(g), 600);
+        break;
+      case 'drowned': // a gargling scream, and he sinks
+        if (audio.running && v) { audio.gurgle(v); this.hush(audio.scream(v, 0.6) + 0.5); }
+        this.subtitle(g, '*he screams through the water*');
+        if (g.emerge?.phase === 'done' || g.state === 'manifest') setTimeout(() => { g.emerge = null; this.relocate(g); this.toast(`${g.def.name} sinks away from the noise.`); }, 1500);
+        break;
+      case 'crawler': // it hunts by sound
+        if (audio.running && v) audio.skitter(v, 24, 1);
+        if (g.emerge?.phase === 'done') {
+          g.dist = Math.max(0.6, g.dist - 1.2 * loud);
+          this.toWorld(g);
+          this.toast('It heard you. It\'s coming.', 2.5);
+        } else if (g.dist > 3) {
+          g.dist = Math.max(2.6, g.dist - 2.5);
+          this.toWorld(g);
+        }
+        break;
+      case 'mimic': // it eats the noise and keeps it
+        g.agit += 20 * loud;
+        this.subtitle(g, rand.pick(['*it repeats the sound you made*', '*your noise comes back from behind you*']));
+        break;
+      case 'whisperer': // SHHHHHH, right in your ears
+        if (audio.running && v) this.hush(audio.hiss(v, 1.8) + 0.4);
+        this.subtitle(g, 'SHHHHHHHHHHHHHHHH');
+        g.agit += 35 * loud;
+        break;
+      case 'grinner':
+        this.say(g, rand.pick(['Shhhh... hee hee... they\'ll hear you.', 'Oh, you\'ve woken them now.', 'Louder! Louder! Hee hee hee.']));
+        break;
+    }
+  }
+
+  // ---- the house: doors, windows, mirrors -----------------------------------------------
+  updateSurfaces() {
+    if (this.noCamera || !this.video || !this.M) return;
+    if (this.t > this.nextScan) {
+      this.nextScan = this.t + 4;
+      const M = this.M;
+      if (detectorState() === 'ready' && (!this.lastObjs || this.t - this.lastObjs.t > 8)) {
+        findObjects(this.video, this.w, this.h, []).then((objs) => { if (objs) this.lastObjs = { objs, t: this.t }; });
+      }
+      let found = [];
+      try { found = findSurfaces(this.video, this.w, this.h); } catch (e) { this.log('surfaces', e.message); }
+      // TVs and laptops: dark glass that reflects. Fridges and furniture: things to knock on.
+      if (this.lastObjs && this.t - this.lastObjs.t < 6) {
+        const kindOf = { tv: 'screen', laptop: 'screen', refrigerator: 'metal', oven: 'metal', microwave: 'metal', 'dining table': 'table', bed: 'bed', chair: 'chair' };
+        for (const o of this.lastObjs.objs) if (kindOf[o.cls]) found.push({ kind: kindOf[o.cls], x: o.x, y: o.y, w: o.w, h: o.h });
+      }
+      for (const f of found) {
+        const b = this.angBox(f, M);
+        const same = this.surfaces.find((s) => s.kind === f.kind && Math.abs(angDiff(s.az, b.az)) < 8 && Math.abs(s.el - b.el) < 8);
+        if (same) Object.assign(same, b, { seen: this.t, pos: { ...this.pos } });
+        else this.surfaces.push({ kind: f.kind, ...b, seen: this.t, first: this.t, pos: { ...this.pos } });
+      }
+      // forget surfaces we haven't seen in a while, or that we've walked away from
+      this.surfaces = this.surfaces.filter((s) => this.t - s.seen < 40 && Math.hypot(s.pos.x - this.pos.x, s.pos.y - this.pos.y) < 1.5);
+    }
+    if (this.t > this.nextKnock) this.tryKnock();
+    if (this.t > this.nextMirror) this.tryMirror();
+  }
+
+  visibleSurfaces(kinds) {
+    return this.surfaces
+      .filter((s) => kinds.includes(s.kind) && this.t - s.seen < 10)
+      .map((s) => ({ s, b: this.screenBox(s) }))
+      .filter(({ b }) => b && b.x + b.w > 0 && b.x < this.w && b.y + b.h > 0 && b.y < this.h);
+  }
+
+  // Something knocks on a door, a window, the fridge — whatever is in front of you.
+  tryKnock() {
+    this.nextKnock = this.t + 4;
+    if (!this.ghosts.some((g) => !g.resolved) || this.scare) return;
+    const pref = this.visibleSurfaces(['door', 'window']);
+    const any = pref.length ? pref : this.visibleSurfaces(['panel', 'screen', 'metal', 'table', 'bed', 'chair']);
+    if (!any.length || rand() > 0.6) return;
+    const { s } = rand.pick(any);
+    const material = { door: 'wood', window: 'glass', panel: 'glass', screen: 'glass', metal: 'metal' }[s.kind] || 'wood';
+    const pattern = rand.pick([[0.32, 0.32], [0.28, 0.28, 0.7, 0.28], [0.9, 0.9], [0.14, 0.14, 0.14, 0.14, 0.14, 0.14], [0.5]]);
+    if (audio.running) {
+      const v = audio.makeVoice();
+      audio.placeVoice(v, angDiff(s.az, this.yaw), s.el - this.pitch, 2.5);
+      v.input.gain.value = 1.3;
+      const dur = audio.knockOn(v.input, material, pattern);
+      this.hush(dur + 1);
+      setTimeout(() => audio.dropVoice(v), (dur + 3) * 1000);
+    }
+    let at = 0.05;
+    this.knockFx = { s, hits: [0, ...pattern].map((g) => (at += g) + this.t) };
+    const name = { door: 'the door', window: 'the window', panel: 'the glass', screen: 'the screen', metal: 'the metal', table: 'the table', bed: 'the bed frame', chair: 'the chair' }[s.kind];
+    if (rand() < 0.6) setTimeout(() => this.showHint(rand.pick([`Something knocks on ${name}.`, `Knocking. On ${name}. From the other side.`, `Did ${name} just knock?`])), 900);
+    vibrate([20, 300, 20]);
+    this.nextKnock = this.t + rand.range(28, 65);
+    this.log('knock', `${s.kind} ${material}`);
+  }
+
+  // A figure in a mirror (or a dark screen). Rare, brief, and gone if you look away.
+  tryMirror() {
+    this.nextMirror = this.t + 5;
+    if (this.mirrorFx || this.scare) return;
+    const c = this.visibleSurfaces(['panel', 'screen']).filter(({ s, b }) => b.h > this.h * 0.12 && this.t - s.first > 1.5);
+    if (!c.length || rand() > 0.35) return;
+    const { s } = rand.pick(c);
+    const pool = this.ghosts.filter((g) => !g.resolved).map((g) => g.type);
+    const type = rand.pick(pool.length ? pool : ['hollow', 'weeper', 'mimic', 'wren']);
+    this.mirrorFx = { s, type, t0: this.t, dur: rand.range(5, 7.5), fx: rand.range(0.3, 0.7) };
+    this.nextMirror = this.t + rand.range(55, 120);
+    this.log('mirror', `${type} in ${s.kind}`);
+  }
+
   resolve(g, outcome, film = 0) {
     if (g.resolved) return;
     g.resolved = outcome;
@@ -600,6 +870,7 @@ export class Hunt {
     const def = g.def;
     this.scare = { type: g.type, t0: this.t, dur: 1.5 };
     hush();
+    this.hush(3);
     const soft = !settings.jumpscares;
     audio.shriek(soft ? 0.35 : settings.intensity);
     vibrate(soft ? [80] : [120, 40, 300, 40, 200]);
@@ -684,6 +955,7 @@ export class Hunt {
   say(g, text, quiet = false, echo = false) {
     const v = g.def.voice;
     g.speaking = Math.min(8, 1 + text.length * 0.07);
+    this.hush(g.speaking + 1);
     this.subtitle(g, text);
     if (!quiet && settings.sound) {
       if (echo && this.mimicBuffer && audio.running) audio.playBuffer(this.mimicBuffer, g.voice.input, { reverse: false, rate: 0.82 });
@@ -725,7 +997,8 @@ export class Hunt {
 
   hintFor(g, precise = false) {
     const blur = precise ? 0 : rand.range(-20, 20);
-    const dir = dirPhrase(g.rel + blur, g.el - (this.pitch || 0));
+    let dir = dirPhrase(g.rel + blur, g.el - (this.pitch || 0));
+    if (g.dist > NEAR) dir += g.dist > 7 ? ', far off. You\'ll have to go to it' : ', further away. Walk toward it';
     let text;
     if (g.blocked) {
       text = g.def.blockedHint || {
@@ -764,6 +1037,7 @@ export class Hunt {
       nextSound: this.t + 2, emerge: null, approach: 0, lit: 0, speaking: 0, photos: 0, wander: 0.5,
     };
     g.el = this.elFor(g);
+    this.toWorld(g);
     g.voice = audio.ctx ? audio.makeVoice() : null;
     this.ghosts.push(g);
     if (this.ghosts.length > before) setTimeout(() => this.showHint('Something new has come. It came from behind you.', true), 6000);
@@ -822,6 +1096,14 @@ export class Hunt {
         ghostly = true;
       }
       this.reactToFlash(g);
+    }
+
+    // the figure in the mirror counts, if you were quick enough
+    const F = this.mirrorFx;
+    if (F && F.alpha > 0.15 && F.box && F.box.x + F.box.w > 0 && F.box.x < this.w) {
+      const pts = Math.round(GHOSTS[F.type].points * 0.6 * (0.5 + F.alpha));
+      caught.push({ type: F.type, pts, mirror: true });
+      ghostly = true;
     }
 
     // date stamp, like an old film camera
@@ -883,6 +1165,57 @@ export class Hunt {
   }
 
   // ---- drawing -----------------------------------------------------------------------------
+  renderHouse(ctx, t) {
+    // the surface shudders with each knock
+    const K = this.knockFx;
+    if (K) {
+      const b = this.screenBox(K.s);
+      const hit = K.hits.find((h) => t >= h && t < h + 0.12);
+      if (b && hit) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.strokeStyle = 'rgba(200,220,210,0.12)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(b.x + (Math.random() - 0.5) * 4, b.y + (Math.random() - 0.5) * 4, b.w, b.h);
+        ctx.restore();
+      }
+      if (t > K.hits[K.hits.length - 1] + 0.5) this.knockFx = null;
+    }
+    // something in the mirror — it lives inside the glass and moves with it
+    const F = this.mirrorFx;
+    if (F) {
+      const b = this.screenBox(F.s);
+      const k = (t - F.t0) / F.dur;
+      const onScreen = b && b.x + b.w > 0 && b.x < this.w && b.y + b.h > 0 && b.y < this.h;
+      if (k >= 1 || !onScreen) {
+        if (k > 0.35 && rand() < 0.5) this.toast(rand.pick(['Was there something in the glass?', 'The reflection was wrong.', 'Something was standing behind you. In the reflection.']), 3);
+        this.mirrorFx = null;
+        F.gone = true;
+      } else {
+        const a = Math.sin(Math.min(1, k) * Math.PI) ** 1.5 * 0.55 * (Math.random() < 0.04 ? 0.3 : 1);
+        F.alpha = a;
+        F.box = b;
+        const ix = b.w * 0.07, iy = b.h * 0.07;
+        const clip = { x: b.x + ix, y: b.y + iy, w: b.w - 2 * ix, h: b.h - 2 * iy };
+        const size = clip.h * 0.95;
+        const cx = clip.x + clip.w * F.fx, cy = clip.y + clip.h * 0.55;
+        ctx.save();
+        // a reflection is reversed
+        ctx.translate(cx, 0);
+        ctx.scale(-1, 1);
+        ctx.translate(-cx, 0);
+        drawGhost(ctx, F.type, cx, cy, size, { t, agit: 0.2 }, { alpha: a, glitch: 0.15, clip: { x: 2 * cx - clip.x - clip.w, y: clip.y, w: clip.w, h: clip.h } });
+        ctx.restore();
+        // a faint sheen on the glass
+        const g = ctx.createLinearGradient(clip.x, clip.y, clip.x + clip.w, clip.y + clip.h);
+        g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, `rgba(220,235,230,${a * 0.12})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(clip.x, clip.y, clip.w, clip.h);
+      }
+    }
+  }
+
   render(t, cond) {
     const { ctx, w, h, dpr } = this;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -921,6 +1254,8 @@ export class Hunt {
       const exclude = g.anchor?.exclude?.length ? g.anchor.exclude.map((b) => this.screenBox(b)).filter(Boolean) : null;
       drawGhost(ctx, g.type, g.proj.x, g.proj.y, g.size, p, { alpha: g.vis * flick, glitch, exclude });
     }
+
+    this.renderHouse(ctx, t);
 
     // A palm print on the inside of the glass.
     if (!this.hand && this.emf > 3.8 && Math.random() < 0.002) this.hand = { t0: t, x: rand.range(0.2, 0.8) * w, y: rand.range(0.25, 0.7) * h, r: rand.range(-0.4, 0.4) };
@@ -982,6 +1317,10 @@ export class Hunt {
     $('#st-dark i').style.height = `${Math.round(c.darkness * 100)}%`;
     $('#st-sound').classList.toggle('ok', c.sound);
     $('#st-hp').classList.toggle('ok', c.headphones);
+    const micEl = $('#st-mic');
+    micEl.classList.toggle('ok', mic.ok && !this.micOff);
+    micEl.classList.toggle('hot', !!this.micHot && !this.micOff);
+    $('#st-mic i').style.height = `${Math.round(Math.min(1, mic.level * 2.5) * 100)}%`;
     $('#btn-torch').classList.toggle('on', c.torch);
     // compass ribbon
     const strip = $('#compass-strip');
@@ -1029,6 +1368,7 @@ export class Hunt {
       if (listening) return;
       if (!canRecognize) { typeBar.hidden = false; input.focus(); return; }
       listening = true;
+      this.listening = true;
       talk.classList.add('live');
       hush();
       $('#you-said').textContent = 'listening…';
@@ -1036,6 +1376,8 @@ export class Hunt {
       listen.onInterim = (txt) => { $('#you-said').textContent = `“${txt}”`; };
       const r = await listen();
       listening = false;
+      this.listening = false;
+      this.hush(1);
       talk.classList.remove('live');
       if (r.text) this.handleSpeech(r.text, r.peak, r.buffer);
       else {
@@ -1085,6 +1427,10 @@ export class Hunt {
       if (!settings.sound) hush();
       this.toast(settings.sound ? 'Sound on.' : 'Sound off. Some of them can only be heard.', 2.5);
     });
+    on($('#st-mic'), 'click', () => {
+      this.micOff = !this.micOff;
+      this.toast(this.micOff ? 'Microphone off. They can\'t hear you, and you can\'t speak to them.' : 'Microphone on. They can hear you now.', 3);
+    });
     on($('#st-hp'), 'click', () => this.app.headphoneTest().then((ok) => {
       this.headphones = ok;
       this.toast(ok ? 'Headphones confirmed. Listen closely.' : 'No headphones. Some voices are too quiet to hear.', 3);
@@ -1093,6 +1439,12 @@ export class Hunt {
     const keys = (e) => {
       if (e.target.tagName === 'INPUT') return;
       if (e.key === ' ') { e.preventDefault(); this.snap(); }
+      // walking, for desktops (phones count your real footsteps)
+      if (e.key === 'w' || e.key === 'W') this.walk(1);
+      if (e.key === 's' && !DEBUG) this.walk(-1);
+      if (DEBUG && e.key === 'n') this.onNoise(1);
+      if (DEBUG && e.key === 'k') { this.nextKnock = 0; }
+      if (DEBUG && e.key === 'm') { this.nextMirror = 0; }
       if (DEBUG && e.key === 'd') { this.forceDark = !this.forceDark; this.toast(`debug dark ${this.forceDark}`); }
       if (DEBUG && e.key === 'h') { this.headphones = !this.headphones; this.toast(`debug headphones ${this.headphones}`); }
       if (DEBUG && e.key === 's') { const g = this.ghosts.find((x) => !x.resolved); g && this.attack(g); }

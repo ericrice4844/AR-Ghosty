@@ -5,11 +5,14 @@
 import { audio } from './audio.js';
 import { rand } from './util.js';
 
-const BPM = 86;
+const BPM = 76;
+// Everything sits a fourth lower than written (D minor -> A minor), and the
+// lead drops a further octave: lower, heavier, less pretty.
+const DOWN = -5;
 const STEP = 60 / BPM / 4; // sixteenth note
 const LOOP_BARS = 16;
 
-const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const mtof = (m) => 440 * Math.pow(2, (m + DOWN - 69) / 12);
 
 // Eight chords, two bars each. i – VI – iv – V – i – bII – VI – V
 const CHORDS = [
@@ -153,6 +156,11 @@ class MenuMusic {
     if (s % 4 === 0) this.tick(t, s === 0);
     if (loop % 2 === 1 && s === 0 && bar % 2 === 0) this.lead(MELODY[ci], t);
     if (s === 0 && rand() < 0.14) this.haunt(t + rand.range(0, STEP * 12));
+    // Something is wrong with the music: dissonant stings, never on a schedule.
+    if (s === 0 && bar >= 4 && t > (this.nextSting ?? 0) && rand() < 0.3) {
+      this.sting(t + STEP * rand.int(0, 8));
+      this.nextSting = t + rand.range(9, 22);
+    }
   }
 
   // ---- voices -------------------------------------------------------------------
@@ -198,7 +206,7 @@ class MenuMusic {
     o1.frequency.value = o2.frequency.value = mtof(m);
     o2.detune.value = 7;
     const lp = audio._filt('lowpass', 800, 7);
-    const peak = 900 + swell * 2600;
+    const peak = 600 + swell * 1700;
     lp.frequency.setValueAtTime(peak, t);
     lp.frequency.exponentialRampToValueAtTime(320, t + STEP * 1.6);
     const g = ctx.createGain();
@@ -310,7 +318,7 @@ class MenuMusic {
     g.gain.setValueAtTime(0.0001, t);
     const total = phrase.reduce((s, [, b]) => s + b, 0) * beat;
     for (const [m, beats] of phrase) {
-      const f = mtof(m);
+      const f = mtof(m - 12);
       o.frequency.setTargetAtTime(f, at, 0.04);
       o2.frequency.setTargetAtTime(f * 2, at, 0.04);
       g.gain.setTargetAtTime(0.06, at, 0.18);
@@ -322,12 +330,153 @@ class MenuMusic {
     og2.gain.value = 0.25;
     o.connect(g);
     o2.connect(og2).connect(g);
-    const lp = audio._filt('lowpass', 2200, 1);
+    const lp = audio._filt('lowpass', 1500, 1);
     g.connect(lp).connect(this.bus);
     const send = ctx.createGain();
     send.gain.value = 1.4;
     lp.connect(send).connect(this.verb);
     for (const n of [o, o2, vib]) { n.start(t); n.stop(t + total + 1.2); }
+  }
+
+  // ---- stings: the bad feeling -----------------------------------------------
+  sting(t) {
+    const kind = rand.pick(['cluster', 'tritone', 'screech', 'prepared', 'swell']);
+    this[`sting_${kind}`](t);
+  }
+
+  // Semitone cluster that swells out of nothing and is cut off.
+  sting_cluster(t) {
+    const ctx = audio.ctx;
+    const base = rand.int(62, 70);
+    const dur = rand.range(1.4, 2.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.11, t + dur);
+    g.gain.setValueAtTime(0.0001, t + dur + 0.02);
+    const bp = audio._bp(mtof(base) * 2, 0.8);
+    g.connect(bp).connect(this.bus);
+    const send = ctx.createGain();
+    send.gain.value = 1.2;
+    bp.connect(send).connect(this.verb);
+    for (const d of [0, 1, 2, 6]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = mtof(base + d);
+      o.detune.setValueAtTime(-15, t);
+      o.detune.linearRampToValueAtTime(15, t + dur);
+      const og = ctx.createGain();
+      og.gain.value = 0.25;
+      o.connect(og).connect(g);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+  }
+
+  // Low brass-like stab on a tritone with a flat ninth.
+  sting_tritone(t) {
+    const ctx = audio.ctx;
+    const root = rand.pick([33, 34, 39]);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+    const lp = audio._filt('lowpass', 1400, 2);
+    lp.frequency.setValueAtTime(1800, t);
+    lp.frequency.exponentialRampToValueAtTime(160, t + 2.2);
+    const sh = ctx.createWaveShaper();
+    sh.curve = audio.distCurve;
+    g.connect(sh).connect(lp).connect(this.bus);
+    const send = ctx.createGain();
+    send.gain.value = 0.9;
+    lp.connect(send).connect(this.verb);
+    for (const d of [0, 6, 13, 12]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = mtof(root + d);
+      o.detune.value = rand.range(-12, 12);
+      const og = ctx.createGain();
+      og.gain.value = 0.2;
+      o.connect(og).connect(g);
+      o.start(t); o.stop(t + 2.7);
+    }
+    this.kick(t);
+  }
+
+  // A thin, high, bowed-metal screech that bends down.
+  sting_screech(t) {
+    const ctx = audio.ctx;
+    const f = rand.range(1500, 2600);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * 0.78, t + 1.4);
+    const trem = ctx.createOscillator();
+    trem.frequency.value = rand.range(9, 16);
+    const tg = ctx.createGain();
+    tg.gain.value = 0.4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.035, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+    trem.connect(tg).connect(g.gain);
+    o.connect(audio._bp(f, 4)).connect(g);
+    const send = ctx.createGain();
+    send.gain.value = 2;
+    g.connect(send).connect(this.verb);
+    g.connect(this.bus);
+    o.start(t); trem.start(t);
+    o.stop(t + 1.7); trem.stop(t + 1.7);
+  }
+
+  // A detuned, inharmonic low piano note, as if from a broken piano downstairs.
+  sting_prepared(t) {
+    const ctx = audio.ctx;
+    for (const m of [rand.int(28, 36)].flatMap((r) => [r, r + 1])) {
+      for (const [ratio, amp] of [[1, 0.2], [2.03, 0.1], [3.11, 0.06], [4.9, 0.03]]) {
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = mtof(m) * ratio;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(amp, t + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 3.5 / ratio);
+        o.connect(g);
+        g.connect(this.bus);
+        const send = ctx.createGain();
+        send.gain.value = 1;
+        g.connect(send).connect(this.verb);
+        o.start(t); o.stop(t + 3.6);
+      }
+    }
+  }
+
+  // Reversed swell rushing into silence.
+  sting_swell(t) {
+    const ctx = audio.ctx;
+    const n = ctx.createBufferSource();
+    n.buffer = audio.noise;
+    const bp = audio._bp(800, 1.5);
+    bp.frequency.setValueAtTime(300, t);
+    bp.frequency.exponentialRampToValueAtTime(4000, t + 2);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 2);
+    g.gain.setValueAtTime(0.0001, t + 2.02);
+    n.connect(bp).connect(g);
+    g.connect(this.bus);
+    const send = ctx.createGain();
+    send.gain.value = 0.8;
+    g.connect(send).connect(this.verb);
+    n.start(t, rand() * 2); n.stop(t + 2.1);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(mtof(45), t);
+    o.frequency.exponentialRampToValueAtTime(mtof(46), t + 2);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.08, t + 2);
+    og.gain.setValueAtTime(0.0001, t + 2.02);
+    o.connect(audio._filt('lowpass', 900)).connect(og).connect(this.bus);
+    o.start(t); o.stop(t + 2.1);
   }
 
   // Things that shouldn't be in the music.
