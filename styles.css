@@ -184,7 +184,15 @@ a.btn { color: var(--ink); }
 .opt { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); gap: 12px; }
 .opt-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .opt-text b { font-weight: normal; }
-.opt-text small { color: var(--dim); font-size: 0.85rem; line-height: 1.4; }
+.opt-help { display: none; }
+.opt-name { background: none; border: 0; padding: 4px 0; text-align: left; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-family: var(--serif); font-size: 1rem; }
+.opt-name .info { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--dim); color: var(--dim); font: italic 0.72rem/16px Georgia, serif; text-align: center; flex: none; }
+.opt-name[aria-expanded="true"] .info, .opt-name:hover .info { border-color: var(--accent); color: var(--accent); }
+.opt-pop { position: fixed; z-index: 20; max-width: min(340px, calc(100vw - 32px)); background: #121815; border: 1px solid rgba(183,227,196,0.4); padding: 12px 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); animation: pop 0.15s ease-out; }
+.opt-pop[hidden] { display: none; }
+.opt-pop b { display: block; font-weight: normal; color: var(--accent); margin-bottom: 4px; }
+.opt-pop p { margin: 0; font-size: 0.92rem; line-height: 1.45; color: #cfd3c6; }
+@keyframes pop { from { opacity: 0; transform: translateY(-4px); } }
 .opt-text em { color: var(--accent); font-style: normal; font-family: var(--type); font-size: 0.7rem; }
 .opt > input, .opt > select, .opt > .btn { flex: none; }
 .opt input[type=checkbox] { width: 22px; height: 22px; accent-color: #6aa47a; }

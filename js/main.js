@@ -393,6 +393,44 @@ function renderSettings() {
   };
 }
 
+// Settings explanations pop up when you tap a setting's name.
+function bindSettingHelp() {
+  const pop = $('#opt-pop');
+  let open = null;
+  const close = () => {
+    pop.hidden = true;
+    if (open) open.setAttribute('aria-expanded', 'false');
+    open = null;
+  };
+  for (const btn of $$('#settings .opt-name')) {
+    const row = btn.closest('.opt');
+    const name = btn.querySelector('b').firstChild.textContent.trim();
+    const ctl = row.querySelector('input, select');
+    if (ctl) ctl.setAttribute('aria-label', name);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (open === btn) { close(); return; }
+      close();
+      pop.querySelector('b').textContent = name;
+      pop.querySelector('p').textContent = row.querySelector('.opt-help').textContent;
+      pop.hidden = false;
+      // just below the setting's name, kept on screen
+      const r = btn.getBoundingClientRect();
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      const left = Math.max(16, Math.min(r.left, innerWidth - pw - 16));
+      let top = r.bottom + 6;
+      if (top + ph > innerHeight - 16) top = Math.max(16, r.top - ph - 6);
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+      btn.setAttribute('aria-expanded', 'true');
+      open = btn;
+    });
+  }
+  document.addEventListener('click', (e) => { if (open && !pop.contains(e.target)) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  $('#settings').addEventListener('scroll', close, { passive: true });
+}
+
 // ---- boot ---------------------------------------------------------------------------
 function buildCompass() {
   const strip = $('#compass-strip');
@@ -410,6 +448,7 @@ function buildCompass() {
 
 function boot() {
   buildCompass();
+  bindSettingHelp();
   bindPrepare();
   document.addEventListener('click', (e) => {
     const go = e.target.closest('[data-go]');
