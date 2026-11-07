@@ -6,7 +6,8 @@ import { sensors, startCamera, stopCamera, setTorch, darkness, currentView, hasM
 import { audio } from './audio.js';
 import { mic, startMic, sampleMic, listen, stopListening, speak, hush, canRecognize } from './voice.js';
 import { drawGhost, drawEdgeHands, drawScare, drawFX } from './render.js';
-import { findObjects, loadDetector } from './detect.js';
+import { findObjects, loadDetector, detectorState } from './detect.js';
+import { placeGhost, ANCHOR, PLACE_TEXT } from './anchor.js';
 import { photos, settings, saveSettings, progress, saveProgress } from './storage.js';
 
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -70,7 +71,7 @@ export class Hunt {
     await startMic();
     if (!this.headphones) this.headphones = await detectHeadphones();
     this.spawn();
-    if (this.ghosts.some((g) => g.def.behavior === 'emerge' || g.def.behavior === 'stalker')) loadDetector();
+    if (!this.noCamera) loadDetector(); // ghosts need to know where the furniture is
 
     this.last = performance.now();
     this.raf = requestAnimationFrame((t) => this.frame(t));
@@ -108,7 +109,7 @@ export class Hunt {
       types.add(type);
       const def = GHOSTS[type];
       const [hm, ch] = BODY[type];
-      const dist = rand.range(2.2, 4.5);
+      const dist = rand.range(1.8, 3.4);
       const g = {
         uid: `${type}-${Math.random().toString(36).slice(2, 7)}`,
         type, def, az: norm360(az), dist, heightM: hm, centerH: ch,
@@ -154,7 +155,9 @@ export class Hunt {
   relocate(g, opts = {}) {
     const yaw = this.yaw ?? 0;
     g.az = norm360(opts.behind ? yaw + 180 + rand.range(-50, 50) : g.az + rand.range(70, 200) * (rand() < 0.5 ? -1 : 1));
-    g.dist = rand.range(2.2, 4.5);
+    g.dist = rand.range(1.8, 3.4);
+    g.anchor = null;
+    g.anchorSince = null;
     g.el = this.elFor(g);
     g.vis = 0;
     g.facing = 0;
@@ -281,7 +284,7 @@ export class Hunt {
         // Lingers just out of sight, drifts slowly, shows itself when you hold still on it.
         if (g.state === 'lurking') {
           g.az = norm360(g.az + g.wander * 2 * dt);
-          if (g.facing > 1.2) this.manifest(g);
+          if (g.facing > 1.2 && this.anchorReady(g)) this.manifest(g);
           else if (onScreen && g.angle < 40 && Math.random() < 0.002) target = 0.25; // a glimpse
         }
         if (g.state === 'manifest') {
@@ -310,7 +313,8 @@ export class Hunt {
         break;
       }
       case 'peripheral': {
-        // Only in the corner of your eye.
+        // Only in the corner of your eye — usually from behind something.
+        if (onScreen && g.angle < 40 && !this.anchorReady(g)) break;
         if (g.proj && onScreen) {
           const dx = (g.proj.x - this.w / 2) / (this.w / 2), dy = (g.proj.y - this.h / 2) / (this.h / 2);
           const r = Math.max(Math.abs(dx), Math.abs(dy));
@@ -324,7 +328,7 @@ export class Hunt {
         break;
       }
       case 'weeper': {
-        if (g.state === 'lurking' && g.angle < 45) this.manifest(g);
+        if (g.state === 'lurking' && g.angle < 45 && this.anchorReady(g)) this.manifest(g);
         if (g.state === 'manifest') {
           target = 1;
           if (cond.torch && g.angle < 22) { g.agit += 28 * dt; if (!g.mem.warned) { g.mem.warned = true; this.toast('The sobbing catches. She doesn\'t like the light.'); } }
@@ -464,6 +468,62 @@ export class Hunt {
 
   emergeSize(g, b) {
     return g.type === 'crawler' ? clamp(b.w * 0.9, this.h * 0.22, this.h * 0.55) : clamp(Math.max(b.w, b.h) * 1.4, this.h * 0.3, this.h * 0.6);
+  }
+
+  // ---- placement in the room -----------------------------------------------------
+  // Before showing itself, a ghost looks at what the camera sees and takes a
+  // place that makes sense: beside the bed, behind the couch, behind you.
+  anchorReady(g) {
+    if (g.anchor) return true;
+    if (!ANCHOR[g.type]) { g.anchor = { kind: 'free', exclude: [] }; return true; }
+    if (this.pitch < -50 || this.pitch > 35) return false; // staring at the floor or ceiling
+    if (g.anchoring) return false;
+    if (this.noCamera || detectorState() === 'unavailable') { this.applyPlacement(g, null, this.M); return true; }
+    g.anchorSince ??= this.t;
+    // give the detector a few seconds to load before falling back
+    if (detectorState() !== 'ready' && this.t - g.anchorSince < 12) return false;
+    g.anchoring = true;
+    const M = this.M, w = this.w, h = this.h, focal = this.focal;
+    const nearX = g.proj ? g.proj.x : w / 2;
+    findObjects(this.video, w, h, ANCHOR[g.type].on).then((objs) => {
+      g.anchoring = false;
+      if (!objs || g.resolved || this.ended) return; // detector busy: try again next frame
+      this.applyPlacement(g, placeGhost(g.type, g.heightM, objs, { w, h, focal, nearX }), M);
+    });
+    return false;
+  }
+
+  applyPlacement(g, pl, M) {
+    const { w, h, focal } = this;
+    if (!pl || pl.kind === 'dark') {
+      const x = pl ? pl.x : g.proj ? clamp(g.proj.x, w * 0.2, w * 0.8) : w / 2;
+      g.az = azElFromDir(unproject(M, x, h / 2, w, h, focal)).az;
+      g.dist = rand.range(2, 3.2);
+      g.el = this.elFor(g);
+      g.anchor = { kind: 'floor', exclude: [] };
+      this.log('place', `${g.type}: floor`);
+      return;
+    }
+    const d = azElFromDir(unproject(M, pl.x, pl.footY - pl.size / 2, w, h, focal));
+    g.az = d.az;
+    g.el = d.el;
+    g.dist = clamp((focal * g.heightM) / pl.size, 0.6, 9);
+    g.anchor = { kind: pl.kind, cls: pl.cls, exclude: pl.exclude.map((r) => this.angBox(r, M)) };
+    this.log('place', `${g.type}: ${pl.kind} ${pl.cls} x=${pl.x.toFixed(0)} foot=${pl.footY.toFixed(0)} size=${pl.size.toFixed(0)} -> el=${g.el.toFixed(1)} dist=${g.dist.toFixed(2)} pitchNow=${this.pitch.toFixed(1)}`);
+    if (PLACE_TEXT[pl.kind] && g.def.behavior !== 'peripheral') setTimeout(() => this.showHint(PLACE_TEXT[pl.kind](pl.cls)), 300);
+  }
+
+  // Screen rect <-> angular box, so things stay pinned to the room as you turn.
+  angBox(r, M = this.M) {
+    const d = azElFromDir(unproject(M, r.x + r.w / 2, r.y + r.h / 2, this.w, this.h, this.focal));
+    return { az: d.az, el: d.el, aw: r.w / this.focal, ah: r.h / this.focal };
+  }
+
+  screenBox(b) {
+    const p = project(this.M, dirFromAzEl(b.az, b.el), this.w, this.h, this.focal);
+    if (!p) return null;
+    const bw = b.aw * this.focal, bh = b.ah * this.focal;
+    return { x: p.x - bw / 2, y: p.y - bh / 2, w: bw, h: bh };
   }
 
   manifest(g, quiet = false) {
@@ -856,7 +916,8 @@ export class Hunt {
         }
         continue;
       }
-      drawGhost(ctx, g.type, g.proj.x, g.proj.y, g.size, p, { alpha: g.vis * flick, glitch });
+      const exclude = g.anchor?.exclude?.length ? g.anchor.exclude.map((b) => this.screenBox(b)).filter(Boolean) : null;
+      drawGhost(ctx, g.type, g.proj.x, g.proj.y, g.size, p, { alpha: g.vis * flick, glitch, exclude });
     }
 
     // A palm print on the inside of the glass.

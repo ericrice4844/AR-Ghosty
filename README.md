@@ -26,17 +26,21 @@ The ghosts in a hunt share a story. More than one of them was hurt by the same m
 
 ### The dead
 
-| Ghost | Threat | Needs | Behaviour | Wants |
+Each one has its own death, and its own idea of what you owe it.
+
+| Ghost | Origin | Needs | Behaviour | Wants |
 |---|---|---|---|---|
-| The Pale Lantern | ☠ | — | Drifting light | Company. Be kind. |
-| Little Wren | ☠☠ | Sound | Hums a lullaby, hides | A friend for hide and seek. Never say no to her twice. |
-| The Weeping Widow | ☠☠☠☠☠ | Dark | Sobs in the dark. Light, the flash and loud voices enrage her | Grief. Whisper comfort. |
-| The Hollow Man | ☠☠☠☠ | Dark | Impossibly tall, doesn't like being stared at | **Revenge.** Give him the right name and he'll leave to settle it. Guess wrong and he won't forgive it. |
-| The Whisperer | ☠☠☠ | Sound + headphones | Invisible unless you face it exactly; circles you whispering | Your name. It trades secrets for names. |
-| The Drowned | ☠☠☠ | Dark | **Seeps up out of sinks, cups, bottles, plants**, anything that holds water | To be found. Promise to tell his mother. |
-| The Crawler | ☠☠☠☠☠ | Dark | **Comes out from under couches, beds and chairs.** Only moves when you're not looking. Hold your light on it. | Hunger. Don't talk. |
-| The Mimic | ☠☠☠☠ | Sound | Plays your own recorded voice back at you, reversed | Your voice. Starve it with silence. |
-| The Grinning Man | ☠☠☠ | — | Only visible at the edge of the lens | Riddles. Answer right for film, answer wrong and lose some. |
+| The Pale Lantern | Edith Marsh, 1887. Followed the marsh lights into the bog looking for her father. | — | Drifting light that hovers over furniture | Company. Be kind. |
+| Little Wren | Wren Callow, 1918. Locked in the nursery with scarlet fever; knocked for nine days. | Sound | Hums a lullaby, plays hide and seek | A friend. Never say no to her twice. |
+| The Weeping Widow | Honora Vane, 1894. Her baby died in the cradle while she slept. She never slept again. | Dark | Crouches beside beds and couches, sobbing. Light, the flash and loud voices enrage her | Grief. Whisper comfort. |
+| The Hollow Man | Abel Ostrander, 1902. A debt collector bricked into a coal cellar by the man who owed him. | Dark | Impossibly tall; stands behind furniture, or behind people | **Revenge.** The others saw who laid the bricks. Give him the right name. |
+| The Whisperer | Madame Sorrel, a 1920s séance fraud, until something real answered and came through her. | Sound + headphones | Invisible unless you face it exactly; circles you whispering | Your name. It trades secrets for names. |
+| The Drowned | Winter 1951: went through the reservoir ice after his dog. The ice closed over him like a lid. | Dark | Seeps up out of sinks, cups, bottles and plants | To be found. Promise to tell his mother. |
+| The Crawler | "The Boneless Boy", a carnival contortionist kept in a crate. Nobody let him out when the carnival burned. | Dark | Comes out from under couches, beds and chairs; only moves when you're not looking. Hold your light on it. | Hunger. Don't talk. |
+| The Mimic | Never a person: something that lived in the static of an old party-line telephone exchange. | Sound | Plays your own recorded voice back at you, reversed | Your voice. Starve it with silence. |
+| The Grinning Man | Dr. Lucius Penhallow, 1911. Drank his own strychnine-laced Joy Elixir; the poison locked his face in a grin. | — | Peeks out from behind things, only at the edge of the lens | Riddles. Answer right for film, wrong and lose some. |
+
+Ghosts place themselves against what the camera sees: object detection finds beds, couches, chairs, tables, fridges and people, and each ghost stands beside, behind (with the furniture hiding its legs) or peeking around them, scaled to the object's real size and standing on the floor. With nothing recognisable in view, they stand in the darkest part of the room at a believable distance.
 
 **Spirit radar** uses your GPS to show haunts within ~450 m. They're tied to the real map and shuffle every 3 hours, so people standing in the same place at the same time see the same ghosts. Get within ~70 m and a haunt joins your next hunt from its real compass direction. Play somewhere safe, and only go where you're allowed to be.
 

@@ -6,7 +6,7 @@ import { rand } from './util.js';
 
 export const CULPRITS = ['Crane', 'Ashby', 'Morrow', 'Vell', 'Harlow', 'Pike', 'Graves', 'Lorne'];
 const DROWNED_NAMES = ['Thomas', 'Elias', 'Samuel', 'Arthur', 'Henry', 'Walter'];
-const DROWNED_PLACES = ['under the mill bridge', 'beneath the reservoir ice', 'in the flooded quarry', 'at the bottom of the old well', 'in the reeds by the weir'];
+const DROWNED_PLACES = ['under the reservoir ice, off the north pier', 'beneath the ice, where the old road goes under the water', 'at the bottom of the reservoir, by the drowned church', 'under the ice, in the reeds by the valve tower'];
 const LOST_CHILDREN = ['Rose', 'June', 'Abel', 'Clara', 'Eli', 'Mae'];
 const RIDDLES = [
   { q: 'I have hands but cannot hold you. A face, but cannot see you. What am I?', a: /\b(clock|watch)\b/ },
@@ -84,7 +84,7 @@ export const GHOSTS = {
     behavior: 'drift',
     want: 'company',
     wantText: 'Wants company. Be kind and stay a while.',
-    lore: 'Most of the dead are not monsters. Some are just tired lights that forgot the way home. They drift toward the warmth of the living.',
+    lore: 'Edith Marsh, 1887. A lamplighter\'s daughter who followed the little lights into the bog, looking for her father. The bog kept her. She is still carrying the light, and she still can\'t find her way out.',
     voice: { pitch: 1.6, rate: 0.85, volume: 0.8 },
     hue: 190,
     hints: ['A faint glow flickers {dir}.', 'Warm air drifts {dir}, the wrong kind of warm.', 'A soft chime rings {dir}.'],
@@ -92,10 +92,10 @@ export const GHOSTS = {
     talk(g, c, lore) {
       const m = g.mem;
       if (c.has('threat') || c.has('insult')) return { say: '...oh. I am sorry I bothered you.', trust: -1, relocate: true };
-      if (c.has('askWho')) { lore.clues.add('culprit'); return { say: `The tall one in the dark... he waits for a man named ${lore.culprit}.` }; }
-      if (c.has('askName')) return { say: "I don't remember my name. Only the light. Only the cold." };
+      if (c.has('askWho')) { lore.clues.add('culprit'); return { say: `The tall one in the dark? He waits for the man who bricked up the cellar. ${lore.culprit}. I saw him carry the bricks.` }; }
+      if (c.has('askName')) return { say: 'Edie. Papa called me Edie. Have you seen him? He went out to the marsh.' };
       if (c.has('askWant')) return { say: 'Just... stay. A little while. It is so cold out here.' };
-      if (c.has('askDeath')) return { say: 'I walked into the fog, and the fog never ended.' };
+      if (c.has('askDeath')) return { say: 'I followed the little lights into the marsh. The water was so cold... and then the lights were inside me.' };
       if (c.has('comfort') || c.has('sorry') || c.has('yes') || c.has('greet') || c.has('promise')) {
         m.trust = (m.trust || 0) + 1;
         if (m.trust >= 2) return { say: 'I think... I can see the way now. Thank you, warm one.', resolve: 'peace', film: 1 };
@@ -117,7 +117,7 @@ export const GHOSTS = {
     behavior: 'drift',
     want: 'play',
     wantText: 'Wants a friend to play hide and seek. Never tell her no.',
-    lore: 'You hear her humming before you see her. A little girl in a nightgown who has been waiting a very long time for someone to play with. She does not like being refused.',
+    lore: 'Wren Callow, 1918. When she caught scarlet fever, her family locked her in the nursery so the others wouldn\'t catch it. Her mother sang to her through the door. She knocked for nine days. You hear her humming before you see her, and she does not like being refused.',
     voice: { pitch: 1.9, rate: 0.82, volume: 0.9 },
     hue: 210,
     hints: ['A child is humming {dir}.', 'Small footsteps patter {dir}.', 'A giggle, {dir}. Then nothing.'],
@@ -126,9 +126,9 @@ export const GHOSTS = {
     talk(g, c, lore) {
       const m = g.mem;
       if (m.hiding) return { say: "No peeking! You have to FIND me." };
-      if (c.has('askWho')) { lore.clues.add('culprit'); return { say: `Mister ${lore.culprit}. He locks the doors. He locked me in the cellar. He locked the tall man too.` }; }
-      if (c.has('askName')) return { say: 'Wren. Mama called me her little Wren.' };
-      if (c.has('askDeath')) return { say: 'I was hiding in the cellar, and the door went click. I waited and waited and waited and waited and waited.' };
+      if (c.has('askWho')) { lore.clues.add('culprit'); return { say: `I saw from the nursery window. Mister ${lore.culprit} put bricks over the cellar door. The tall man was still inside.` }; }
+      if (c.has('askName')) return { say: 'Wren. Wren Callow. Mama called me her little bird.' };
+      if (c.has('askDeath')) return { say: 'I was hot and sick, so they locked the nursery door. Mama sang through it. I knocked and knocked and knocked. Then Mama stopped singing.' };
       if (m.asked && (c.has('yes') || c.has('play'))) {
         m.hiding = true; m.asked = false;
         return { say: 'Hide and seek! Close your eyes and count to ten. Then come find me. No peeking...', hide: true };
@@ -160,7 +160,7 @@ export const GHOSTS = {
     behavior: 'weeper',
     want: 'grief',
     wantText: 'Grieving a lost child. Do NOT shine light on her. Whisper comfort. Never shout.',
-    lore: 'She crouches in the dark with her face in her hands and she sobs. She has been sobbing for a hundred years. Light startles her. Noise startles her. You do not want to startle her.',
+    lore: 'Honora Vane, 1894. Her baby stopped breathing in the cradle while she slept in the next room. She never slept again. She crouches in the dark where the cradle used to be, and she sobs. Light startles her. Noise startles her. You do not want to startle her.',
     voice: { pitch: 0.75, rate: 0.6, volume: 0.7 },
     hue: 0,
     hints: ['Muffled sobbing, {dir}.', 'Someone is crying {dir}. Keep your light down.', 'A wet, broken breath {dir}.'],
@@ -172,9 +172,9 @@ export const GHOSTS = {
       if (c.has('threat') || c.has('insult')) return { say: 'GET. OUT.', attack: true };
       if (c.has('sorry') || c.has('comfort')) {
         m.trust = (m.trust || 0) + 1;
-        if (m.trust === 1) return { say: `...he took her... my ${lore.lostChild}... my little ${lore.lostChild}...`, agitation: -25 };
-        if (m.trust === 2) { lore.clues.add('culprit'); return { say: `${lore.culprit}... ${lore.culprit} took her down into the cellar and she never... came... back... up...`, agitation: -25 }; }
-        return { say: `${lore.lostChild}? ...I hear her. I hear her calling me. I'm coming, darling...`, resolve: 'peace', film: 1 };
+        if (m.trust === 1) return { say: `...I only closed my eyes... for a moment... my ${lore.lostChild}... the cradle was so quiet...`, agitation: -25 };
+        if (m.trust === 2) { lore.clues.add('culprit'); return { say: `...${lore.culprit} lived through the wall... he heard her crying that night... he heard her and he did nothing... nothing...`, agitation: -25 }; }
+        return { say: `${lore.lostChild}? ...she's crying. She's crying! I can hear her! Mama's coming, darling... Mama's coming...`, resolve: 'peace', film: 1 };
       }
       if (c.has('askWho') && (m.trust || 0) >= 1) { lore.clues.add('culprit'); return { say: `${lore.culprit}...`, agitation: 5 }; }
       if (c.has('greet')) return { say: '*sob*... go... away...', agitation: 12 };
@@ -193,7 +193,7 @@ export const GHOSTS = {
     behavior: 'drift',
     want: 'revenge',
     wantText: 'Wants revenge on whoever locked him in the cellar. Learn the culprit\'s name from the others. Do not guess.',
-    lore: 'Far too tall, far too thin, standing perfectly still where the shadows are thickest. He starved behind a locked door. He has not forgotten, and he has not forgiven.',
+    lore: 'Abel Ostrander, 1902. A debt collector who came to the wrong house to collect. The man who owed him bricked him into the coal cellar. Nine days. He came out of the dark far too tall and far too thin, and he has not forgotten the name.',
     voice: { pitch: 0.1, rate: 0.55, volume: 1 },
     hue: 260,
     hints: ['The dark feels deeper {dir}.', 'Something very tall is standing {dir}.', 'Slow, heavy breathing {dir}.'],
@@ -205,9 +205,9 @@ export const GHOSTS = {
       }
       if (mentionsWrongCulprit(c, lore) || c.name) return { say: 'LIAR.', agitation: 50 };
       if (c.has('dontKnow') || c.has('askWho')) return { say: 'Then find out. Ask the others. The child saw everything.', agitation: 8 };
-      if (c.has('askWant')) return { say: 'The one who shut the cellar door. Give me his name, and I will leave you be.' };
-      if (c.has('askName')) return { say: 'I had a name. It rotted with me.' };
-      if (c.has('askDeath')) return { say: 'Nine days in the dark. I clawed at the door until I had no fingers left to claw with.' };
+      if (c.has('askWant')) return { say: 'The one who laid the bricks. Give me his name, and I will leave you be.' };
+      if (c.has('askName')) return { say: 'Ostrander. It meant something once. It rotted in the coal dust with the rest of me.' };
+      if (c.has('askDeath')) return { say: 'I came to collect what he owed. He bricked me into the coal cellar. Nine days. I clawed at the bricks until I had no fingers left to claw with.' };
       if (c.has('sorry') || c.has('comfort')) return { say: 'Your pity is worthless to me.' };
       if (c.has('threat') || c.has('insult')) return { say: 'You first, then.', agitation: 40 };
       if (c.has('bye')) return { say: 'You will leave when I say.', agitation: 15 };
@@ -226,7 +226,7 @@ export const GHOSTS = {
     behavior: 'faced',
     want: 'name',
     wantText: 'Invisible until you face it exactly. Follow its whispers with headphones. It wants your name, and pays in secrets.',
-    lore: 'You will never see it unless you are looking straight at it. You find it by sound alone — whispering in your left ear, then your right, then right behind you. It collects names.',
+    lore: 'Madame Sorrel ran séances in the 1920s, and every one of them was faked: the knocks, the voices, the cold hands under the sheet. Then one night something real answered, and it came through her. It wears her shroud now. You find it by sound alone, and it keeps every name it is given.',
     voice: { pitch: 0.4, rate: 0.7, volume: 0.6 },
     hue: 120,
     hints: ['Whispering, {dir}.', 'Something breathes against your ear, {dir}.', 'It says your name, {dir}. Or something like it.'],
@@ -246,7 +246,9 @@ export const GHOSTS = {
         return { say: 'Such a small thing... a name... give it...', agitation: 30 };
       }
       if (c.has('threat') || c.has('insult')) return { say: 'shhhhhhhhhhhhhhhh', attack: true };
-      if (c.has('askWant') || c.has('greet') || c.has('askName')) return { say: 'Closer... closer... tell us your name...' };
+      if (c.has('askName')) return { say: 'Sorrel... she was Sorrel... she called us, and we came... now we wear her... tell us YOUR name...' };
+      if (c.has('askDeath')) return { say: 'She pretended to talk to the dead... so many times... one night, we answered... we came through... she went out...' };
+      if (c.has('askWant') || c.has('greet')) return { say: 'Closer... closer... tell us your name...' };
       return { say: rand.pick(['your name... your name...', 'we can hear your heart', 'say it... say your name...']) };
     },
   },
@@ -263,7 +265,7 @@ export const GHOSTS = {
     emergeFrom: ['sink', 'toilet', 'bottle', 'cup', 'bowl', 'wine glass', 'vase', 'refrigerator', 'potted plant'],
     want: 'remembered',
     wantText: 'Seeps out of anything that holds water. Ask where he is, then promise to tell his mother.',
-    lore: 'Water collects where he has been. He seeps up out of sinks and bottles and cups, bloated and grey, and he is so, so cold. Nobody ever found him.',
+    lore: 'Winter, 1951. He went out onto the reservoir after his dog, and the ice opened under him and closed over him like a lid. He could see the light through it. They found the dog in spring. They never found him. Now he comes up out of anything that holds water.',
     voice: { pitch: 0.35, rate: 0.55, volume: 0.9 },
     hue: 175,
     hints: ['Dripping, {dir}.', 'You smell stagnant water {dir}.', 'A wet gurgle, {dir}.'],
@@ -277,7 +279,7 @@ export const GHOSTS = {
         return { say: 'Promise what? You don\'t even know where I am...' };
       }
       if (c.has('askName')) return { say: `${lore.drownedName}... my name was ${lore.drownedName}...` };
-      if (c.has('askWho')) { lore.clues.add('culprit'); return { say: `${lore.culprit}... held me under... until the bubbles stopped...` }; }
+      if (c.has('askWho')) return { say: 'Nobody... nobody did it... the ice just... closed... like a lid... I could see the light through it...' };
       if (c.has('askDeath') || c.has('askWant') || c.has('greet')) {
         m.toldPlace = true;
         return { say: `I'm ${lore.drownedPlace}. Nobody looked. Tell my mother where I am. Promise me.` };
@@ -299,7 +301,7 @@ export const GHOSTS = {
     emergeFrom: ['couch', 'bed', 'chair', 'bench', 'dining table', 'toilet', 'suitcase'],
     want: 'hunger',
     wantText: 'Comes out from under furniture. It only moves when you are not looking. Hold your flashlight on it to drive it off. Do not talk — it finds you by your voice.',
-    lore: 'It lives in the space under beds and couches. Its arms bend the wrong way. It only moves when you are not looking at it — and every time you look back, it is closer.',
+    lore: 'The carnival billed him as The Boneless Boy, and kept him in a crate between shows. When the carnival burned, nobody let him out. He lives in the low, dark places now, under beds and couches, with every bone in the wrong place. He only moves when you are not looking.',
     voice: { pitch: 0.05, rate: 1.3, volume: 1 },
     hue: 340,
     hints: ['Skittering, {dir}.', 'Something knocks under the furniture {dir}.', 'Clicking, like knuckles, {dir}. Closer.'],
@@ -307,7 +309,7 @@ export const GHOSTS = {
     sounds: ['skitter'],
     talk(g, c) {
       g.approach = Math.min(1, (g.approach || 0) + 0.2);
-      return { say: rand.pick(['*clicking*', 'hhhhhhungry', 'more... talk more... I can find you by your voice', '*it giggles with your voice*']), agitation: 20 };
+      return { say: rand.pick(['*clicking*', 'hhhhhhungry', 'more... talk more... I can find you by your voice', 'let me out of the box... let me out... LET ME OUT', 'they paid a penny to watch me bend', '*bones pop back into place, one by one*']), agitation: 20 };
     },
   },
 
@@ -322,13 +324,14 @@ export const GHOSTS = {
     behavior: 'drift',
     want: 'voice',
     wantText: 'Feeds on your voice and plays it back. Stay completely silent and it will starve.',
-    lore: 'It has no voice of its own, so it wears yours. Whatever you say, it says back — wrong, backwards, from just behind you. The more you talk, the more it looks like you.',
+    lore: 'It was never a person. It lived in the static of an old party-line telephone exchange, listening to a whole town talk, learning every voice. When the exchange closed, it went looking for new voices. It has none of its own, so it wears yours.',
     voice: { pitch: 1.0, rate: 0.85, volume: 0.9 },
     hue: 30,
     hints: ['Someone repeats a word you said, {dir}.', 'Your own voice, {dir}.', 'Something laughs your laugh, {dir}.'],
     blockedHint: 'Something {dir} is trying to say something. You can\'t hear it with the sound off.',
     sounds: ['echo'],
     talk(g, c) {
+      if (c.has('askName') || c.has('askDeath')) return { say: 'number please... number please... I\'ll connect you... hello? hello? is anyone on the line... hello... hello...', agitation: 25, echo: true };
       const words = c.text.split(' ').filter(Boolean);
       const echo = words.length ? words.slice(-3).join(' ') : 'hello';
       return { say: `${echo}... ${echo}... ${echo.split('').reverse().join('')}...`, agitation: 25, echo: true };
@@ -346,7 +349,7 @@ export const GHOSTS = {
     behavior: 'peripheral',
     want: 'riddle',
     wantText: 'Only visible at the edge of the lens; looking straight at him makes him vanish. Asks riddles. Right answers earn film, wrong ones cost it.',
-    lore: 'A man in an old suit with a smile far too wide for his face. You only ever see him from the corner of your eye. He loves games, and he cheats.',
+    lore: 'Dr. Lucius Penhallow sold Joy Elixir from town to town in 1911. It was laced with strychnine. When a crowd turned on him, he drank a bottle to prove it was safe. Strychnine locks the face in a grin as it kills, and his never unlocked. He is only ever seen from the corner of your eye. He loves games, and he cheats.',
     voice: { pitch: 0.7, rate: 0.78, volume: 0.9 },
     hue: 50,
     hints: ['Someone is giggling {dir}.', 'In the corner of your eye, {dir}, something smiles.', 'A soft, delighted laugh {dir}.'],
@@ -360,6 +363,8 @@ export const GHOSTS = {
         return { say: 'Wrong! I\'ll take one of your pictures for that. Hee hee.', film: -1, agitation: 20 };
       }
       if (c.has('threat') || c.has('insult')) return { say: 'Oh, I like you. I like you very much.', agitation: 25 };
+      if (c.has('askName')) return { say: 'Doctor Lucius Penhallow, purveyor of Joy Elixir! One spoonful and you\'ll never stop smiling. Hee hee. Never.' };
+      if (c.has('askDeath')) return { say: 'They said my tonic was poison. So I drank the whole bottle, to show them. And look... I\'m still smiling.' };
       m.riddle = rand.pick(RIDDLES);
       const intro = c.has('greet') ? 'Don\'t look right at me. It\'s rude. ' : c.has('askWant') ? 'A game! A riddle! Answer true and I gift you. Answer false and I take. ' : '';
       return { say: intro + m.riddle.q };

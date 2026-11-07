@@ -9,6 +9,7 @@ import { drawGhost, drawFX } from './render.js';
 import { photos, settings, saveSettings, progress, resetAll } from './storage.js';
 import { Hunt } from './hunt.js';
 import { music } from './music.js';
+import { loadDetector } from './detect.js';
 
 const app = {
   hunt: null,
@@ -99,6 +100,7 @@ const screens = {
   warning() { titleBg.stop(); },
   prepare() {
     titleBg.stop();
+    loadDetector(); // start the download while they get ready
     refreshChecks();
   },
   radar() { titleBg.stop(); radar.start(); },

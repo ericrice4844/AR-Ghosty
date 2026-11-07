@@ -29,7 +29,8 @@ export function loadDetector() {
       try {
         if (!window.tf) await loadScript(TFJS);
         if (!window.cocoSsd) await loadScript(COCO);
-        model = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        // the full model: ~17 MB, but it actually finds sofas, beds and fridges
+        model = await window.cocoSsd.load({ base: 'mobilenet_v2' });
       } catch (e) {
         console.warn('[detect] object detection unavailable, using shadows instead', e);
         failed = true;
@@ -63,11 +64,11 @@ export async function findObjects(video, w, h, prefer = []) {
   if (busy) return null;
   busy = true;
   try {
-    const scale = Math.min(1, 320 / Math.max(w, h));
+    const scale = Math.min(1, 512 / Math.max(w, h));
     if (!grabCover(video, w, h, scale)) return [];
     const out = [];
     if (model) {
-      const preds = await model.detect(work, 10, 0.35);
+      const preds = await model.detect(work, 12, 0.25);
       for (const p of preds) {
         const [x, y, bw, bh] = p.bbox;
         out.push({ cls: p.class, x: x / scale, y: y / scale, w: bw / scale, h: bh / scale, score: p.score + (prefer.includes(p.class) ? 1 : 0) });

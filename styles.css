@@ -51,7 +51,7 @@ ul { padding-left: 1.2em; line-height: 1.5; }
 .menu { display: flex; flex-direction: column; gap: 10px; width: min(300px, 100%); }
 .stats { margin-top: 28px; font-family: var(--type); font-size: 0.75rem; color: var(--faint); letter-spacing: 0.08em; }
 .sound-hint { margin-top: 14px; font-family: var(--type); font-size: 0.7rem; letter-spacing: 0.15em; color: var(--dim); text-transform: uppercase; animation: pulse 2.4s infinite; }
-.sound-hint[hidden] { display: none; }
+.sound-hint[hidden] { display: block; visibility: hidden; }
 @keyframes pulse { 50% { opacity: 0.4; } }
 @keyframes breathe { 0%,100% { opacity: 0.85; filter: blur(0); } 50% { opacity: 1; filter: blur(0.4px); } 52% { opacity: 0.4; } 53% { opacity: 1; } }
 
